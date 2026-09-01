@@ -110,7 +110,7 @@
 
       .how { max-width: 760px; margin: 0 auto; }
       .how p { color: var(--dim); margin-bottom: 14px; font-size: 15px; }
-      .how code { background: var(--bg2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; font-size: 13px; color: #cdd3dc; }
+      code { background: var(--bg2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; font-size: 13px; color: #cdd3dc; }
       .note { background: rgba(245,158,11,.09); border: 1px solid rgba(245,158,11,.3); border-radius: 12px; padding: 16px; color: #f0d9a8; font-size: 14px; margin-top: 22px; }
 
       footer { border-top: 1px solid var(--border); padding: 34px 0; color: var(--dim); font-size: 13.5px; text-align: center; }
@@ -123,7 +123,7 @@
         <div class="brand"><img src="icon.png" alt="" /> Kiro 任务监控</div>
         <nav class="nav-links">
           <a href="#features" class="hide-sm">功能</a>
-          <a href="#how" class="hide-sm">原理</a>
+          <a href="#usage" class="hide-sm">使用</a>
           <a href="#install" class="hide-sm">安装</a>
           <a href="https://github.com/DamonAmber/kiro-task-monitor" target="_blank" rel="noopener">GitHub</a>
         </nav>
@@ -193,23 +193,40 @@
       </div>
     </section>
 
-    <!-- 原理 -->
-    <section id="how">
-      <div class="wrap how">
-        <h2 class="section-title">怎么做到的</h2>
-        <p class="section-sub">不依赖任何 Kiro 内部接口</p>
-        <p>
-          工具<strong>只读</strong>本地的 Kiro 会话记录（<code>~/.kiro/sessions</code>）：从 <code>session.json</code>
-          拿标题、工作区与状态，从 <code>messages.jsonl</code> 的事件流（<code>turn_end.stopReason</code>、
-          <code>pending_interaction</code>）推导每个会话是运行中、已完成，还是出错需要重试。
-        </p>
-        <p>
-          <strong>一键重试</strong>：把对应工作区的 Kiro 窗口切到前台，按 <code>⌘L</code> 聚焦聊天输入框，
-          自动粘贴「继续」并回车——省去你手动找窗口、敲字。
-        </p>
+    <!-- 使用 -->
+    <section id="usage">
+      <div class="wrap">
+        <h2 class="section-title">怎么使用</h2>
+        <p class="section-sub">打开就能用，几乎零学习成本</p>
+        <div class="features">
+          <div class="feat">
+            <span class="ic">👀</span><h3>看状态</h3>
+            <p>浮窗停在桌面右上角，始终置顶。每行是一个会话：左侧圆点即状态，右侧是耗时与所属工作区。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">🔁</span><h3>一键重试</h3>
+            <p>出错或卡住的会话，行末出现「重试」按钮，点一下即把「继续」发回对应的 Kiro 窗口，无需手动找窗口敲字。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">🖱️</span><h3>快速跳转</h3>
+            <p>点某一行，即把该会话所在的 Kiro 窗口切到最前面，方便你接着处理。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">🔔</span><h3>收通知</h3>
+            <p>任务完成或出错都会弹系统通知（出错还带提示音和「重试」按钮），不用一直盯着屏幕。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">📊</span><h3>菜单栏概览</h3>
+            <p>菜单栏 <code>K</code> 图标一眼看全局：<code>K ✓</code> 全空闲 / <code>K …2</code> 2 个运行中 / <code>K ❗1</code> 1 个待处理。左键显示/隐藏浮窗，右键打开快捷菜单。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">⚙️</span><h3>按需设置</h3>
+            <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容、卡住判定时间、显示最近多少小时等。</p>
+          </div>
+        </div>
         <div class="note">
-          ⚠️ 一键重试依赖 macOS 的<strong>辅助功能</strong>与<strong>自动化（控制 Kiro）</strong>权限。
-          首次点「重试」时系统会弹窗，允许一次即可；仅「监控 + 通知」不需要任何额外权限。
+          🔐 首次点「重试」时，macOS 会请求「辅助功能」与「自动化（控制 Kiro）」权限，允许一次即可
+          （仅查看状态与接收通知无需任何权限）。
         </div>
       </div>
     </section>
