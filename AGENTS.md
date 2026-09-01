@@ -45,6 +45,11 @@ electron-builder.yml 打包/签名/公证/发布配置
 - **只显示真正打开的会话**：`openWindows.js` 只读 `~/Library/Application Support/Kiro/User/globalStorage/storage.json`
   （当前打开/激活的窗口）与各窗口 `workspaceStorage/<hash>/state.vscdb`（`kiro.kiroAgent.sessionPanels.entries/focused`，
   用系统 `sqlite3 -readonly` 读），据此过滤历史残留会话并标注 `isFocused`。读不到时安全回退为不过滤。
+  ⚠️ 这份窗口/面板状态是 VS Code 内核**周期性落盘、会滞后**的：Kiro 已在跑、用户刚装并打开
+  本 App 时，正在运行的会话可能还没被写进 `sessionPanels.entries`。因此 `applyOpenWindowFilter`
+  里有一条**优先规则**：`state ∈ {running,waiting,failed,stuck}` 且近 10min 有活动的会话
+  **一律显示**，凌驾于「只显示已打开」的过滤之上（近期活动时间作护栏，避免翻出老残留）。
+  改这里务必保留该规则，否则会重现「Kiro 在跑但监控里看不到运行中会话」的问题。
 - **套餐用量**：`usage.js` 只读全局 `~/Library/Application Support/Kiro/User/globalStorage/state.vscdb`
   里 `key='kiro.kiroAgent'` 的 value(JSON) → 字段 `kiro.resourceNotifications.usageState`
   （`usageLimit`/`currentUsage`/`currentOverages`/`overageCharges`/`resetDate` 等），归一化后展示。

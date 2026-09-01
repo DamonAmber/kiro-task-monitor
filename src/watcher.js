@@ -361,7 +361,21 @@ function applyOpenWindowFilter(sessions, opts = {}) {
 
   if (!onlyOpen || !ctx || !ctx.ok) return sessions; // 降级：不过滤
 
+  // 「此刻真实存活 / 需要你处理」的会话（运行中·等待你·出错·卡住，且近期有活动），
+  // 永远显示，凌驾于「只显示已打开」的过滤之上。
+  //
+  // 原因：Kiro（VS Code 内核）的窗口/会话面板状态（storage.json、state.vscdb 的
+  // sessionPanels.entries）是**周期性落盘、会滞后**的。当「Kiro 已在运行 → 用户刚装并
+  // 打开本 App」时，那条正在跑的会话可能还没被写进面板记录，仅凭面板列表过滤就会把它漏掉
+  // （用户反馈的正是此现象）。这类会话按定义不是历史残留，故直接放行；用近期活动时间
+  // 作护栏，确保不会把早已结束的老残留（idle 很久）误翻出来。
+  const LIVE_RECENT_MS = 10 * 60 * 1000; // 近 10 分钟有写入才算「此刻存活」
+  const ATTENTION = new Set([STATE.RUNNING, STATE.WAITING, STATE.FAILED, STATE.STUCK]);
+  const isLiveNow = (s) =>
+    ATTENTION.has(s.state) && (s.idleMs ?? Infinity) <= LIVE_RECENT_MS;
+
   return sessions.filter((s) => {
+    if (isLiveNow(s)) return true; // 活跃/待处理会话优先，绝不因窗口状态滞后而被隐藏
     const f = normFolder(s.workspacePath);
     if (!ctx.openFolders.has(f)) return false; // 工作区窗口未打开 → 残留会话
     const panels = ctx.panelsByFolder.get(f);
