@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('api', {
   },
   // 主动拉取一次
   getSessions: () => ipcRenderer.invoke('sessions:get'),
+  // 套餐用量：主动拉取 + 订阅推送
+  getUsage: () => ipcRenderer.invoke('usage:get'),
+  onUsage: (cb) => {
+    const handler = (_e, usage) => cb(usage);
+    ipcRenderer.on('usage:update', handler);
+    return () => ipcRenderer.removeListener('usage:update', handler);
+  },
   // 一键重试
   retry: (payload) => ipcRenderer.invoke('session:retry', payload),
   // 聚焦某工作区的 Kiro 窗口

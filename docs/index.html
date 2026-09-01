@@ -84,6 +84,62 @@
         background: var(--bg2);
       }
 
+      /* 首屏浮窗渲染图：按真实 UI 手绘（非截图），数据均为虚构示例 */
+      .appshot {
+        width: 100%; max-width: 340px; margin-left: auto;
+        background: rgba(28, 28, 32, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 16px; overflow: hidden;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+      }
+      .appshot .as-bar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 11px 13px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .appshot .as-left { display: flex; align-items: center; gap: 7px; }
+      .appshot .as-logo { color: var(--blue); font-size: 14px; }
+      .appshot .as-title { font-weight: 600; font-size: 13px; }
+      .appshot .as-count { font-size: 11px; color: var(--dim); }
+      .appshot .as-btns { display: flex; gap: 8px; color: var(--dim); font-size: 13px; }
+      .appshot .as-list { padding: 7px; display: flex; flex-direction: column; gap: 6px; }
+      .appshot .as-card {
+        display: flex; align-items: flex-start; gap: 9px;
+        padding: 9px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05);
+      }
+      .appshot .as-card.foc {
+        background: rgba(59, 130, 246, 0.1);
+        box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.28);
+      }
+      .appshot .as-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex: 0 0 auto; }
+      .appshot .as-main { flex: 1 1 auto; min-width: 0; }
+      .appshot .as-t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .appshot .as-tag {
+        display: inline-block; font-size: 10px; font-weight: 600; color: var(--blue);
+        background: rgba(59, 130, 246, 0.16); border-radius: 5px; padding: 2px 5px; margin-right: 5px;
+      }
+      .appshot .as-meta {
+        font-size: 11px; color: var(--dim); margin-top: 3px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .appshot .as-meta .sl { font-weight: 600; }
+      .appshot .as-retry {
+        align-self: center; color: #fff; border-radius: 7px; padding: 5px 10px;
+        font-size: 11.5px; font-weight: 600; flex: 0 0 auto;
+      }
+      .appshot .as-usage {
+        padding: 8px 13px 10px; border-top: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .appshot .as-uhead { display: flex; align-items: baseline; justify-content: space-between; }
+      .appshot .as-umain { font-size: 11.5px; }
+      .appshot .as-upct { font-size: 11.5px; font-weight: 600; color: var(--dim); }
+      .appshot .as-utrack {
+        margin-top: 6px; height: 5px; border-radius: 3px;
+        background: rgba(255, 255, 255, 0.1); overflow: hidden;
+      }
+      .appshot .as-ufill { height: 100%; border-radius: 3px; }
+      .appshot .as-usub { margin-top: 5px; font-size: 10.5px; color: var(--dim); }
+
       /* 分区 */
       section { padding: 56px 0; border-top: 1px solid var(--border); }
       .section-title { font-size: 27px; letter-spacing: -0.3px; margin-bottom: 10px; text-align: center; }
@@ -156,7 +212,60 @@
           <div class="cta-note" id="ctaNote">下载 .dmg，拖进「应用程序」即可 · 双击直接打开，无需绕过 Gatekeeper</div>
         </div>
         <div>
-          <img class="shot" src="screenshot.png" alt="Kiro 任务监控浮窗界面" />
+          <div class="appshot" role="img" aria-label="Kiro 任务监控浮窗界面示意：多个会话状态与套餐用量条">
+            <div class="as-bar">
+              <div class="as-left">
+                <span class="as-logo">◐</span>
+                <span class="as-title">Kiro 任务</span>
+                <span class="as-count">· 5 个 · ❗2 · …1</span>
+              </div>
+              <div class="as-btns"><span>⚙</span><span>—</span></div>
+            </div>
+            <div class="as-list">
+              <div class="as-card foc">
+                <span class="as-dot" style="background: var(--blue)"></span>
+                <div class="as-main">
+                  <div class="as-t"><span class="as-tag">当前</span>重构支付回调的幂等处理</div>
+                  <div class="as-meta"><span class="sl" style="color: var(--blue)">运行中</span> · 2分15秒 · payment-service</div>
+                </div>
+              </div>
+              <div class="as-card">
+                <span class="as-dot" style="background: var(--red)"></span>
+                <div class="as-main">
+                  <div class="as-t">补充网关限流的单元测试</div>
+                  <div class="as-meta"><span class="sl" style="color: var(--red)">出错</span> · api-gateway · rate limit exceeded</div>
+                </div>
+                <span class="as-retry" style="background: var(--red)">重试</span>
+              </div>
+              <div class="as-card">
+                <span class="as-dot" style="background: var(--green)"></span>
+                <div class="as-main">
+                  <div class="as-t">生成本周数据同步报表</div>
+                  <div class="as-meta"><span class="sl" style="color: var(--green)">已完成</span> · 5分03秒 · data-pipeline</div>
+                </div>
+              </div>
+              <div class="as-card">
+                <span class="as-dot" style="background: var(--amber)"></span>
+                <div class="as-main">
+                  <div class="as-t">升级依赖并修复类型告警</div>
+                  <div class="as-meta"><span class="sl" style="color: var(--amber)">等待你</span> · auth-service</div>
+                </div>
+              </div>
+              <div class="as-card">
+                <span class="as-dot" style="background: var(--purple)"></span>
+                <div class="as-main">
+                  <div class="as-t">批量重命名组件与全部引用</div>
+                  <div class="as-meta"><span class="sl" style="color: var(--purple)">疑似卡住</span> · 31分12秒 · web-dashboard</div>
+                </div>
+                <span class="as-retry" style="background: var(--purple)">重试</span>
+              </div>
+            </div>
+            <div class="as-usage">
+              <div class="as-uhead"><span class="as-umain">剩 490 / 1000 Credits</span><span class="as-upct">51%</span></div>
+              <div class="as-utrack"><div class="as-ufill" style="width: 51%; background: var(--green)"></div></div>
+              <div class="as-usub">12 天后重置</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -171,6 +280,7 @@
           <div class="feat"><span class="ic">🔴</span><h3>出错一键重试</h3><p>会话因报错停下时高亮告警，点一下就把「继续」发回对应窗口。</p></div>
           <div class="feat"><span class="ic">🟣</span><h3>卡死兜底</h3><p>运行中却长时间无动静，判定疑似卡住并提醒，避免白等。</p></div>
           <div class="feat"><span class="ic">🎯</span><h3>只盯打开的会话</h3><p>跨多个窗口，只显示你当前真正打开着的会话，还标出每个窗口「当前」聚焦的那个，不被旧会话刷屏。</p></div>
+          <div class="feat"><span class="ic">💳</span><h3>套餐用量一眼看</h3><p>浮窗底部一条进度条，随时看清套餐额度用了多少、还剩多少、几天后重置；接近上限变黄、超额变红。</p></div>
           <div class="feat"><span class="ic">🔒</span><h3>只读且安全</h3><p>仅读取本地会话记录推导状态，绝不修改 Kiro 的任何数据。</p></div>
           <div class="feat"><span class="ic">🔄</span><h3>自动更新</h3><p>已签名公证，自动检查新版；也可在设置里手动检查，下载完一键重启更新。</p></div>
         </div>
@@ -216,12 +326,16 @@
             <p>任务完成或出错都会弹系统通知（出错还带提示音和「重试」按钮），不用一直盯着屏幕。</p>
           </div>
           <div class="feat">
+            <span class="ic">💳</span><h3>看套餐用量</h3>
+            <p>浮窗底部一条用量进度条：还剩多少额度、已用百分比、几天后重置一目了然；接近上限变黄、超额变红。不需要时可在设置里关掉。</p>
+          </div>
+          <div class="feat">
             <span class="ic">📊</span><h3>菜单栏概览</h3>
             <p>菜单栏 <code>K</code> 图标一眼看全局：<code>K ✓</code> 全空闲 / <code>K …2</code> 2 个运行中 / <code>K ❗1</code> 1 个待处理。左键显示/隐藏浮窗，右键打开快捷菜单。</p>
           </div>
           <div class="feat">
             <span class="ic">⚙️</span><h3>按需设置</h3>
-            <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容，选择「只显示已打开的会话」，还能手动检查更新、一键重启升级。</p>
+            <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容，选择「只显示已打开的会话」、开关套餐用量显示，还能手动检查更新、一键重启升级。</p>
           </div>
         </div>
         <div class="note">

@@ -16,6 +16,7 @@ const {
 
 const { autoUpdater } = require('electron-updater');
 const { scanSessions, STATE } = require('./src/watcher');
+const { readUsage } = require('./src/usage');
 const retry = require('./src/retry');
 const { Config } = require('./src/config');
 
@@ -23,7 +24,9 @@ let tray = null;
 let win = null;
 let config = null;
 let pollTimer = null;
+let usageTimer = null;
 let lastSessions = [];
+let lastUsage = { ok: false, primary: null, breakdowns: [], timestamp: null };
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
@@ -348,7 +351,7 @@ function poll() {
   handleTransitions(sessions, now);
   updateTrayTitle(sessions);
   if (win && !win.isDestroyed()) {
-    win.webContents.send('sessions:update', { sessions, config: config.data });
+    win.webContents.send('sessions:update', { sessions, config: config.data, usage: lastUsage });
   }
 }
 
@@ -356,6 +359,26 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   poll();
   pollTimer = setInterval(poll, config.get('pollMs') || 2000);
+}
+
+/* ------------------------------------------------------------------ *
+ * 套餐用量（只读 Kiro 全局缓存，变化慢，单独用更长的间隔刷新）
+ * ------------------------------------------------------------------ */
+function refreshUsage() {
+  try {
+    lastUsage = readUsage();
+  } catch (e) {
+    // 读取异常时保留上一次的值，仅记录诊断日志
+    console.error('[usage] refresh failed:', e && e.message);
+    return;
+  }
+  if (win && !win.isDestroyed()) win.webContents.send('usage:update', lastUsage);
+}
+
+function startUsagePolling() {
+  if (usageTimer) clearInterval(usageTimer);
+  refreshUsage();
+  usageTimer = setInterval(refreshUsage, config.get('usagePollMs') || 60000);
 }
 
 /**
@@ -439,11 +462,13 @@ function setupAutoUpdate() {
  * IPC
  * ------------------------------------------------------------------ */
 function registerIpc() {
-  ipcMain.handle('sessions:get', () => ({ sessions: lastSessions, config: config.data }));
+  ipcMain.handle('sessions:get', () => ({ sessions: lastSessions, config: config.data, usage: lastUsage }));
+  ipcMain.handle('usage:get', () => lastUsage);
   ipcMain.handle('config:get', () => config.data);
   ipcMain.handle('config:set', (_e, patch) => {
     const data = config.set(patch || {});
     if (patch && 'pollMs' in patch) startPolling();
+    if (patch && 'usagePollMs' in patch) startUsagePolling();
     if (patch && 'alwaysOnTop' in patch && win) win.setAlwaysOnTop(!!patch.alwaysOnTop, 'floating');
     return data;
   });
@@ -493,6 +518,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   startPolling();
+  startUsagePolling();
   setupAutoUpdate();
 
   app.on('activate', () => {

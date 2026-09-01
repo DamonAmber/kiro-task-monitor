@@ -264,6 +264,80 @@ body {
   pointer-events: none;
 }
 
+/* ---------- 套餐用量（底部条） ---------- */
+.usage {
+  flex: 0 0 auto;
+  padding: 8px 12px 9px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: default;
+}
+.usage.hidden {
+  display: none;
+}
+.usage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.usage-main {
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage-pct {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.usage-track {
+  margin-top: 6px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.usage-fill {
+  height: 100%;
+  border-radius: 3px;
+  width: 0;
+  transition: width 0.4s ease;
+  background: var(--done);
+}
+.usage-sub {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 0;
+}
+.usage-sub:empty {
+  display: none;
+}
+/* 颜色分级：正常/预警/超额 */
+.usage.ok .usage-fill {
+  background: var(--done);
+}
+.usage.warn .usage-fill {
+  background: var(--waiting);
+}
+.usage.warn .usage-pct {
+  color: var(--waiting);
+}
+.usage.over .usage-fill {
+  background: var(--failed);
+}
+.usage.over .usage-pct,
+.usage.over .usage-main {
+  color: var(--failed);
+}
+
 /* ---------- 设置 ---------- */
 .settings {
   position: absolute;

@@ -198,16 +198,121 @@ document.getElementById('btn-install-update').addEventListener('click', () => {
 });
 window.api.onUpdateState((state) => renderUpdate(state));
 
+/* ---------- 套餐用量 ---------- */
+const usageEl = document.getElementById('usage');
+const usageMainEl = document.getElementById('usage-main');
+const usagePctEl = document.getElementById('usage-pct');
+const usageFillEl = document.getElementById('usage-fill');
+const usageSubEl = document.getElementById('usage-sub');
+
+let lastUsage = null;
+let showUsage = true;
+
+// 数字紧凑格式：整数直接显示，否则保留 1 位小数
+function fmtNum(n) {
+  if (!isFinite(n)) return '0';
+  const r = Math.round(n * 10) / 10;
+  return Math.abs(r - Math.round(r)) < 0.05 ? String(Math.round(r)) : r.toFixed(1);
+}
+
+// 重置日 → “N天后重置 / 明天重置 / 今天重置 / M月D日重置”
+function fmtReset(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (days > 1) return `${days} 天后重置`;
+  if (days === 1) return '明天重置';
+  if (days === 0) return '今天重置';
+  return `${d.getMonth() + 1}月${d.getDate()}日重置`;
+}
+
+// 快照写入时间 → “更新于 X 前”
+function fmtAgo(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s} 秒前`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
+}
+
+function renderUsage() {
+  if (!usageEl) return;
+  const u = lastUsage;
+  if (!showUsage || !u || !u.ok || !u.primary) {
+    usageEl.classList.add('hidden');
+    return;
+  }
+  const p = u.primary;
+  usageEl.classList.remove('hidden');
+
+  const pct = Math.max(0, Math.min(100, Number(p.percentageUsed) || 0));
+  const unit = p.displayNamePlural || 'Credits';
+  const sym = (p.currency && p.currency.symbol) || '';
+
+  // 颜色分级：超额=红，>=80% 预警=黄，否则正常=绿
+  usageEl.classList.remove('ok', 'warn', 'over');
+  const level = p.overLimit ? 'over' : pct >= 80 ? 'warn' : 'ok';
+  usageEl.classList.add(level);
+  usageFillEl.style.width = (p.overLimit ? 100 : pct) + '%';
+
+  if (p.overLimit) {
+    const over = p.currentOverages || Math.max(p.currentUsage - p.usageLimit, 0);
+    const charge = p.overageCharges > 0 ? ` · ${sym}${fmtNum(p.overageCharges)}` : '';
+    usageMainEl.textContent = `已超 ${fmtNum(over)} ${unit}${charge}`;
+    usagePctEl.textContent = `${fmtNum(pct)}%`;
+  } else {
+    usageMainEl.textContent = `剩 ${fmtNum(p.remaining)} / ${fmtNum(p.usageLimit)} ${unit}`;
+    usagePctEl.textContent = `${fmtNum(pct)}%`;
+  }
+  usageSubEl.textContent = fmtReset(p.resetDate);
+
+  // 悬停看完整明细
+  const tip = [
+    `已用 ${fmtNum(p.currentUsage)} / ${fmtNum(p.usageLimit)} ${unit}（${fmtNum(pct)}%）`,
+    p.overLimit
+      ? `超额 ${fmtNum(p.currentOverages)} ${unit}，费用 ${sym}${fmtNum(p.overageCharges)}${p.overageRate ? `（单价 ${sym}${p.overageRate}）` : ''}`
+      : `剩余 ${fmtNum(p.remaining)} ${unit}`,
+    p.resetDate ? `重置日 ${new Date(p.resetDate).toLocaleDateString()}` : '',
+    u.timestamp ? `数据更新于 ${fmtAgo(u.timestamp)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  usageEl.title = tip;
+}
+
+window.api.onUsage((usage) => {
+  lastUsage = usage;
+  renderUsage();
+});
+
 /* ---------- 数据流 ---------- */
-window.api.onSessions(({ sessions, config }) => {
+window.api.onSessions(({ sessions, config, usage }) => {
   render(sessions || []);
+  if (config && 'showUsage' in config) showUsage = !!config.showUsage;
+  if (usage) lastUsage = usage;
+  renderUsage();
 });
 
 (async () => {
   const cfg = await window.api.getConfig();
+  showUsage = cfg.showUsage !== false;
   bindSettings(cfg);
-  const { sessions } = await window.api.getSessions();
+  // 「显示套餐用量」开关即时生效，不必等下一轮推送
+  const usageToggle = document.querySelector('[data-cfg="showUsage"]');
+  if (usageToggle) {
+    usageToggle.addEventListener('change', () => {
+      showUsage = usageToggle.checked;
+      renderUsage();
+    });
+  }
+  const { sessions, usage } = await window.api.getSessions();
   render(sessions || []);
+  if (usage) lastUsage = usage;
+  renderUsage();
   try {
     const st = await window.api.getUpdateState();
     renderUpdate(st);

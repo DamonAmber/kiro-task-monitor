@@ -14,6 +14,8 @@ src/
   watcher.js         ★核心：扫描会话 + tail 消息流 → 推导每个会话的实时状态（deriveState）
   openWindows.js     只读 Kiro 窗口状态（storage.json + workspaceStorage/*/state.vscdb）→
                      判断哪些会话真正打开/聚焦，供 watcher 过滤残留、标注 isFocused
+  usage.js           只读 Kiro 全局 state.vscdb 缓存的套餐用量（额度/已用/超额/重置日），
+                     主进程每 60s 刷新推给浮窗，底部展示；只读、非实时、读不到即降级不显示
   retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底
   config.js          配置读写（userData/config.json）
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据（Application Support/Kiro）路径
@@ -41,6 +43,10 @@ electron-builder.yml 打包/签名/公证/发布配置
 - **只显示真正打开的会话**：`openWindows.js` 只读 `~/Library/Application Support/Kiro/User/globalStorage/storage.json`
   （当前打开/激活的窗口）与各窗口 `workspaceStorage/<hash>/state.vscdb`（`kiro.kiroAgent.sessionPanels.entries/focused`，
   用系统 `sqlite3 -readonly` 读），据此过滤历史残留会话并标注 `isFocused`。读不到时安全回退为不过滤。
+- **套餐用量**：`usage.js` 只读全局 `~/Library/Application Support/Kiro/User/globalStorage/state.vscdb`
+  里 `key='kiro.kiroAgent'` 的 value(JSON) → 字段 `kiro.resourceNotifications.usageState`
+  （`usageLimit`/`currentUsage`/`currentOverages`/`overageCharges`/`resetDate` 等），归一化后展示。
+  这是 **Kiro 自己写的缓存快照、非实时 API**：只能读到 Kiro 上次写入的值（UI 用 `timestamp` 标注新鲜度）。
 
 ## 铁律（容易踩雷）
 1. **只读 `~/.kiro`**：任何情况下都不要写入/修改 Kiro 的会话文件。

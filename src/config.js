@@ -22,6 +22,9 @@ const DEFAULT_CONFIG = {
   retryMessage: '继续', // 重试发送的内容
   retrySend: true, // 重试时是否自动回车发送
 
+  showUsage: true, // 底部显示套餐用量（只读 Kiro 缓存的额度/已用/超额）
+  usagePollMs: 60000, // 套餐用量刷新间隔（变化慢，单独用更长间隔）
+
   bounds: null, // 浮窗位置（记忆）
   alwaysOnTop: true,
 };

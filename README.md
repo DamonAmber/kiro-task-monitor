@@ -15,6 +15,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 - 🟡 **等待你确认** —— agent 停下等待你的确认或输入
 - ⚪️ 已取消 / 空闲
 
+外加一条 💳 **套餐用量**：浮窗底部一条进度条，随时看清 Kiro 套餐额度**剩余 / 已用百分比 / 是否超额 / 重置倒计时**，接近上限变黄、超额变红。
+
 解决的痛点：Kiro 任务执行久、经常因各种原因中断需要手动回复「继续」，但你不盯着就不知道它什么时候完成或失败，导致重试不及时、浪费时间。
 
 ---
@@ -46,6 +48,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 - 每个窗口的 `workspaceStorage/<hash>/state.vscdb`（SQLite，用系统 `sqlite3 -readonly` 读取）—— 该窗口侧边栏打开了哪些会话、当前聚焦的是哪个。
 
 据此默认只显示"当前 Kiro 窗口里真正打开着的会话"，并标记每个窗口**聚焦（激活）**的那个会话（浮窗里显示「当前」标签）。若这份窗口状态读不到，则安全回退到"按最近活动时间显示"的旧行为，绝不让监控变空白。详见 `src/openWindows.js`。
+
+**套餐用量**：Kiro 会把订阅用量快照缓存进 `~/Library/Application Support/Kiro/User/globalStorage/state.vscdb`（`ItemTable` 里 `key='kiro.kiroAgent'` 的 value(JSON) → 字段 `kiro.resourceNotifications.usageState`，含 `usageLimit`/`currentUsage`/`currentOverages`/`overageCharges`/`resetDate` 等）。工具用系统 `sqlite3 -readonly` **只读**取出并归一化（剩余额度、已用百分比、是否超额、重置倒计时），主进程每 60s 刷新一次推给浮窗，在底部展示。注意这是 **Kiro 自己写入的缓存快照、非实时 API**——只要 Kiro 在正常使用就会周期刷新；读不到时安全降级为不显示。详见 `src/usage.js`。
 
 **聚焦 / 一键重试**：优先用 Kiro 命令行 `kiro <工作区路径>` 把对应窗口带到前台——由 Kiro 自己切换窗口,能可靠跨 Space、把**全屏**窗口也切过去(这是 AppleScript 的 `AXRaise` 做不到的);若 CLI 不可用再退回 AppleScript(按窗口标题匹配工作区名)。重试在此基础上再 `⌘L` 聚焦聊天输入框 → 粘贴「继续」→ 回车。
 
@@ -126,6 +130,7 @@ npm run watch:once   # 只扫描打印一次
 | 卡住阈值·无工具（秒） | 无工具在执行、且运行中无写入超过该值 → 判为卡住 | 240 |
 | 卡住阈值·工具执行中（秒） | 有工具在跑（慢查询/长命令/构建/测试）时用的更长宽限 | 1800 |
 | 显示最近（小时） | 二级过滤：在已打开的会话中再按最近 N 小时活跃筛选 | 24 |
+| 底部显示**套餐用量** | 浮窗底部显示 Kiro 套餐额度剩余 / 已用百分比 / 超额 / 重置倒计时 | 开 |
 | 窗口置顶 | 浮窗始终置顶 | 开 |
 
 配置保存在 `~/Library/Application Support/kiro-task-monitor/config.json`。
@@ -149,6 +154,7 @@ electron-builder.yml 打包配置（dmg+zip / 签名 / 公证 / GitHub 发布）
 src/
   watcher.js         核心：扫描 session.json + tail messages.jsonl → 推导状态
   openWindows.js     只读 Kiro 窗口状态 → 判断哪些会话真正打开/聚焦（过滤残留）
+  usage.js           只读 Kiro 全局缓存的套餐用量（额度/已用/超额/重置日）
   retry.js           一键重试 / 聚焦窗口（kiro CLI 优先，AppleScript 兜底）
   config.js          配置读写
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据路径
