@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kiro 任务监控 — 实时盯住每个 Kiro 会话，失败一键重试</title>
+    <meta
+      name="description"
+      content="Mac 桌面浮窗，实时监控所有 Kiro 会话任务：运行中 / 已完成 / 出错，失败一键重试、完成弹通知。已签名公证，自动更新。"
+    />
+    <link rel="icon" href="icon.png" />
+    <meta property="og:title" content="Kiro 任务监控" />
+    <meta property="og:description" content="实时盯住每个 Kiro 会话，失败一键重试、完成弹通知。" />
+    <meta property="og:image" content="screenshot.png" />
+    <style>
+      :root {
+        --bg: #0c0c0f;
+        --bg2: #141419;
+        --card: #17171d;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #f2f2f5;
+        --dim: #9a9aa5;
+        --blue: #3b82f6;
+        --green: #22c55e;
+        --amber: #f59e0b;
+        --red: #ef4444;
+        --purple: #a855f7;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        font-family: -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: inherit; text-decoration: none; }
+      .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 13px 24px; border-radius: 12px; font-size: 15px; font-weight: 600;
+        cursor: pointer; transition: transform .12s, filter .12s; border: none;
+      }
+      .btn-primary { background: var(--blue); color: #fff; }
+      .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+      .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+      .btn-ghost:hover { background: rgba(255,255,255,.06); }
+
+      /* 顶栏 */
+      header {
+        position: sticky; top: 0; z-index: 20;
+        backdrop-filter: saturate(160%) blur(12px);
+        background: rgba(12, 12, 15, 0.7);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+      .brand img { width: 28px; height: 28px; border-radius: 7px; }
+      .nav-links { display: flex; align-items: center; gap: 20px; font-size: 14px; color: var(--dim); }
+      .nav-links a:hover { color: var(--text); }
+      @media (max-width: 640px) { .nav-links .hide-sm { display: none; } }
+
+      /* 首屏 */
+      .hero { padding: 72px 0 40px; }
+      .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 48px; align-items: center; }
+      @media (max-width: 860px) { .hero-grid { grid-template-columns: 1fr; gap: 32px; } }
+      .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+      .pill {
+        font-size: 12.5px; color: var(--dim); background: var(--bg2);
+        border: 1px solid var(--border); padding: 4px 11px; border-radius: 999px;
+      }
+      .hero h1 { font-size: 42px; line-height: 1.15; letter-spacing: -0.5px; margin-bottom: 16px; }
+      .hero h1 .grad {
+        background: linear-gradient(90deg, #5b9bff, #3b82f6);
+        -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .hero p.lead { font-size: 17px; color: var(--dim); margin-bottom: 28px; max-width: 520px; }
+      .cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+      .cta-note { font-size: 12.5px; color: var(--dim); margin-top: 12px; }
+      .shot {
+        width: 100%; border-radius: 18px; border: 1px solid var(--border);
+        box-shadow: 0 30px 80px rgba(0,0,0,.55); display: block;
+        background: var(--bg2);
+      }
+
+      /* 分区 */
+      section { padding: 56px 0; border-top: 1px solid var(--border); }
+      .section-title { font-size: 27px; letter-spacing: -0.3px; margin-bottom: 10px; text-align: center; }
+      .section-sub { color: var(--dim); text-align: center; margin-bottom: 40px; font-size: 15px; }
+
+      .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      @media (max-width: 820px) { .features { grid-template-columns: 1fr; } }
+      .feat { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+      .feat .ic { font-size: 22px; margin-bottom: 12px; display: block; }
+      .feat h3 { font-size: 16px; margin-bottom: 6px; }
+      .feat p { font-size: 14px; color: var(--dim); }
+
+      .legend { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 720px; margin: 0 auto; }
+      @media (max-width: 640px) { .legend { grid-template-columns: 1fr; } }
+      .leg { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 13px 16px; }
+      .dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+      .leg b { font-size: 14.5px; } .leg span { font-size: 13px; color: var(--dim); }
+
+      .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      @media (max-width: 820px) { .steps { grid-template-columns: 1fr; } }
+      .step { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+      .step .n { width: 30px; height: 30px; border-radius: 50%; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 12px; }
+      .step h3 { font-size: 16px; margin-bottom: 6px; } .step p { font-size: 14px; color: var(--dim); }
+
+      .how { max-width: 760px; margin: 0 auto; }
+      .how p { color: var(--dim); margin-bottom: 14px; font-size: 15px; }
+      .how code { background: var(--bg2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; font-size: 13px; color: #cdd3dc; }
+      .note { background: rgba(245,158,11,.09); border: 1px solid rgba(245,158,11,.3); border-radius: 12px; padding: 16px; color: #f0d9a8; font-size: 14px; margin-top: 22px; }
+
+      footer { border-top: 1px solid var(--border); padding: 34px 0; color: var(--dim); font-size: 13.5px; text-align: center; }
+      footer a { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap nav">
+        <div class="brand"><img src="icon.png" alt="" /> Kiro 任务监控</div>
+        <nav class="nav-links">
+          <a href="#features" class="hide-sm">功能</a>
+          <a href="#how" class="hide-sm">原理</a>
+          <a href="#install" class="hide-sm">安装</a>
+          <a href="https://github.com/DamonAmber/kiro-task-monitor" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- 首屏 -->
+    <div class="wrap hero">
+      <div class="hero-grid">
+        <div>
+          <div class="badge-row">
+            <span class="pill">macOS · Apple Silicon &amp; Intel</span>
+            <span class="pill">已签名 · 已公证</span>
+            <span class="pill" id="verPill">自动更新</span>
+          </div>
+          <h1>实时盯住每个 <span class="grad">Kiro</span> 会话<br />失败一键重试</h1>
+          <p class="lead">
+            Kiro 任务跑得久，你不盯着就不知道它何时完成、何时出错停下。
+            这个桌面浮窗替你盯着所有会话：出错弹提示 + 一键重试，完成即时通知。
+          </p>
+          <div class="cta">
+            <a class="btn btn-primary" id="downloadBtn"
+               href="https://github.com/DamonAmber/kiro-task-monitor/releases/latest">
+              ⬇ 下载 macOS 版
+            </a>
+            <a class="btn btn-ghost" href="https://github.com/DamonAmber/kiro-task-monitor" target="_blank" rel="noopener">
+              在 GitHub 查看
+            </a>
+          </div>
+          <div class="cta-note" id="ctaNote">下载 .dmg，拖进「应用程序」即可 · 双击直接打开，无需绕过 Gatekeeper</div>
+        </div>
+        <div>
+          <img class="shot" src="screenshot.png" alt="Kiro 任务监控浮窗界面" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 功能 -->
+    <section id="features">
+      <div class="wrap">
+        <h2 class="section-title">它替你解决什么</h2>
+        <p class="section-sub">跨所有工作区，一个浮窗看清全部会话状态</p>
+        <div class="features">
+          <div class="feat"><span class="ic">🟢</span><h3>完成即时通知</h3><p>任务跑完立刻弹通知，不用反复切回去看它好了没。</p></div>
+          <div class="feat"><span class="ic">🔴</span><h3>出错一键重试</h3><p>会话因报错停下时高亮告警，点一下就把「继续」发回对应窗口。</p></div>
+          <div class="feat"><span class="ic">🟣</span><h3>卡死兜底</h3><p>运行中却长时间无动静，判定疑似卡住并提醒，避免白等。</p></div>
+          <div class="feat"><span class="ic">🗂️</span><h3>跨工作区</h3><p>同时监控多个 Kiro 窗口/工作区的所有会话，一屏尽览。</p></div>
+          <div class="feat"><span class="ic">🔒</span><h3>只读且安全</h3><p>仅读取本地会话记录推导状态，绝不修改 Kiro 的任何数据。</p></div>
+          <div class="feat"><span class="ic">🔄</span><h3>自动更新</h3><p>已签名公证，启动自动检查新版、后台下载、退出时静默安装。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 状态说明 -->
+    <section>
+      <div class="wrap">
+        <h2 class="section-title">状态一目了然</h2>
+        <p class="section-sub">每个会话一行，颜色即状态</p>
+        <div class="legend">
+          <div class="leg"><span class="dot" style="background:var(--blue)"></span><div><b>运行中</b> <span>· agent 正在执行，显示已运行时长</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--green)"></span><div><b>已完成</b> <span>· 一轮正常结束，轮到你了</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--red)"></span><div><b>出错</b> <span>· 报错停下，需要重试</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--purple)"></span><div><b>疑似卡住</b> <span>· 长时间无写入，兜底提醒</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--amber)"></span><div><b>等待你确认</b> <span>· agent 停下等你输入</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--dim)"></span><div><b>空闲 / 已取消</b> <span>· 无进行中的任务</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 原理 -->
+    <section id="how">
+      <div class="wrap how">
+        <h2 class="section-title">怎么做到的</h2>
+        <p class="section-sub">不依赖任何 Kiro 内部接口</p>
+        <p>
+          工具<strong>只读</strong>本地的 Kiro 会话记录（<code>~/.kiro/sessions</code>）：从 <code>session.json</code>
+          拿标题、工作区与状态，从 <code>messages.jsonl</code> 的事件流（<code>turn_end.stopReason</code>、
+          <code>pending_interaction</code>）推导每个会话是运行中、已完成，还是出错需要重试。
+        </p>
+        <p>
+          <strong>一键重试</strong>：把对应工作区的 Kiro 窗口切到前台，按 <code>⌘L</code> 聚焦聊天输入框，
+          自动粘贴「继续」并回车——省去你手动找窗口、敲字。
+        </p>
+        <div class="note">
+          ⚠️ 一键重试依赖 macOS 的<strong>辅助功能</strong>与<strong>自动化（控制 Kiro）</strong>权限。
+          首次点「重试」时系统会弹窗，允许一次即可；仅「监控 + 通知」不需要任何额外权限。
+        </div>
+      </div>
+    </section>
+
+    <!-- 安装 -->
+    <section id="install">
+      <div class="wrap">
+        <h2 class="section-title">三步安装</h2>
+        <p class="section-sub">全程无需命令行</p>
+        <div class="steps">
+          <div class="step"><div class="n">1</div><h3>下载</h3><p>点上方按钮下载最新的 <code>.dmg</code>（universal，通用于 Apple Silicon 与 Intel）。</p></div>
+          <div class="step"><div class="n">2</div><h3>安装</h3><p>双击 dmg，把「Kiro 任务监控」拖进「应用程序」。</p></div>
+          <div class="step"><div class="n">3</div><h3>运行</h3><p>启动后浮窗停在桌面右上角，菜单栏出现 <code>K</code> 图标。已公证，双击直开。</p></div>
+        </div>
+        <div style="text-align:center; margin-top:36px;">
+          <a class="btn btn-primary" id="downloadBtn2"
+             href="https://github.com/DamonAmber/kiro-task-monitor/releases/latest">⬇ 下载 macOS 版</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          <a href="https://github.com/DamonAmber/kiro-task-monitor" target="_blank" rel="noopener">GitHub 仓库</a>
+          · MIT License · 仅支持 macOS
+        </p>
+        <p style="margin-top:6px; opacity:.7;">Kiro 任务监控 · 让每个 Kiro 任务都不被漏掉</p>
+      </div>
+    </footer>
+
+    <script>
+      // 动态获取最新 Release，把下载按钮指向最新的 .dmg，并显示版本号
+      (async function () {
+        const REPO = "DamonAmber/kiro-task-monitor";
+        try {
+          const res = await fetch("https://api.github.com/repos/" + REPO + "/releases/latest", {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          const dmg = (data.assets || []).find((a) => a.name.endsWith(".dmg"));
+          const btns = [document.getElementById("downloadBtn"), document.getElementById("downloadBtn2")];
+          if (dmg) btns.forEach((b) => b && (b.href = dmg.browser_download_url));
+          if (data.tag_name) {
+            const ver = document.getElementById("verPill");
+            if (ver) ver.textContent = data.tag_name + " · 自动更新";
+            const note = document.getElementById("ctaNote");
+            if (note) note.textContent = "最新版本 " + data.tag_name + " · .dmg 拖进「应用程序」即可 · 无需绕过 Gatekeeper";
+          }
+        } catch (e) {
+          /* 网络失败则保留指向 releases/latest 页面的默认链接 */
+        }
+      })();
+    </script>
+  </body>
+</html>
