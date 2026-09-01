@@ -8,6 +8,23 @@
 - 签名：Developer ID Application 证书；公证：Apple notary
 - 分发：GitHub Releases；客户端 electron-updater 每次启动检查、后台下载、退出时安装
 
+## 流程总览
+
+```mermaid
+flowchart TD
+  A["本地：npm version patch<br/>(改 package.json 版本号 + 打 git tag vX.Y.Z)"] --> B["git push origin main --follow-tags"]
+  B --> C{"tag 匹配 v*.*.* ?"}
+  C -- 否 --> X["不触发（只推分支不会发版）"]
+  C -- 是 --> D["GitHub Actions: release.yml（macOS runner）"]
+  D --> E["npm ci → 生成图标"]
+  E --> F["electron-builder：打包 universal<br/>→ 签名(Developer ID) → 公证(Apple)"]
+  F --> G["发布到 GitHub Releases<br/>dmg · zip · blockmap · latest-mac.yml"]
+  G --> H["用户端 electron-updater：启动读取 latest-mac.yml"]
+  H --> I["后台下载 zip → 退出时静默安装"]
+```
+
+> 凭据（签名证书 / 公证 / 发布）全部走 GitHub Secrets，见第三节；本地 `.env` 仅用于应急发版。
+
 ---
 
 ## 一、日常发版（正规路径）

@@ -1,5 +1,11 @@
 # Kiro 任务监控（Kiro Task Monitor）
 
+[![Release](https://github.com/DamonAmber/kiro-task-monitor/actions/workflows/release.yml/badge.svg)](https://github.com/DamonAmber/kiro-task-monitor/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/DamonAmber/kiro-task-monitor?label=%E4%B8%8B%E8%BD%BD&sort=semver)](https://github.com/DamonAmber/kiro-task-monitor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/DamonAmber/kiro-task-monitor/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://github.com/DamonAmber/kiro-task-monitor/releases)
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作区）的任务进度：
 
 - 🔵 **运行中** —— agent 正在执行，显示已运行时长
@@ -31,10 +37,12 @@ Kiro 的窗口标题恰好是工作区文件夹名（如 `mijia-net`），因此
 
 ---
 
-## 安装（面向用户）
+## 下载安装（面向用户）
 
-从 [GitHub Releases](https://github.com/DamonAmber/kiro-task-monitor/releases) 下载最新的
-`KiroTaskMonitor-<版本>-universal.dmg`，拖进「应用程序」即可。已签名 + 公证，双击直接打开，无需绕过 Gatekeeper。
+👉 **[前往 Releases 下载最新版](https://github.com/DamonAmber/kiro-task-monitor/releases/latest)**
+
+下载其中的 `KiroTaskMonitor-<版本>-universal.dmg`，打开后把 app 拖进「应用程序」即可运行
+（Apple Silicon 与 Intel 通用）。已签名 + 公证，双击直接打开，**无需右键绕过 Gatekeeper**。
 安装后**每次启动自动检查更新**，新版无感升级。
 
 首次点「重试」时会请求 **辅助功能** 与 **自动化（控制 Kiro）** 权限，允许一次即可。
