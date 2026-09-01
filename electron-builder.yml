@@ -1,0 +1,52 @@
+appId: com.damonamber.kiro-task-monitor
+productName: Kiro 任务监控
+copyright: Copyright © 2026 DamonAmber
+
+directories:
+  buildResources: build
+  output: dist
+
+# 只把运行时真正需要的文件打进包（不含 node_modules 的开发依赖会由 electron-builder 自动处理）
+files:
+  - main.js
+  - preload.js
+  - src/**/*
+  - renderer/**/*
+  - package.json
+
+# 产物文件名用纯 ASCII，避免中文/空格在 GitHub Release 资源 URL 与自动更新 feed 里出问题
+artifactName: KiroTaskMonitor-${version}-${arch}.${ext}
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  # dmg 供首次手动下载安装；zip 供 electron-updater 自动增量更新（macOS 必需）
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  hardenedRuntime: true # 公证前提
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 公证：设为 true 后由环境变量 APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID 提供凭据
+  notarize: true
+
+dmg:
+  title: ${productName} ${version}
+  # 拖拽到 Applications 的标准布局
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+
+# 发版目标：GitHub Releases（electron-updater 从这里检查更新）
+publish:
+  provider: github
+  owner: DamonAmber
+  repo: kiro-task-monitor

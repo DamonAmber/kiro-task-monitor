@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
+    />
+    <title>Kiro 任务监控</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="titlebar" id="titlebar">
+        <div class="titlebar-left">
+          <span class="logo">◐</span>
+          <span class="title">Kiro 任务</span>
+          <span class="counts" id="counts"></span>
+        </div>
+        <div class="titlebar-right nodrag">
+          <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+          <button class="icon-btn" id="btn-hide" title="隐藏">—</button>
+        </div>
+      </header>
+
+      <main class="list" id="list">
+        <div class="empty" id="empty">正在读取 Kiro 会话…</div>
+      </main>
+
+      <!-- 设置面板 -->
+      <section class="settings hidden" id="settings">
+        <div class="settings-head">
+          <span>设置</span>
+          <button class="icon-btn nodrag" id="btn-settings-close">✕</button>
+        </div>
+        <div class="settings-body">
+          <label class="row"><span>出错 / 卡住时通知</span><input type="checkbox" data-cfg="notifyFailed" /></label>
+          <label class="row"><span>完成时通知</span><input type="checkbox" data-cfg="notifyDone" /></label>
+          <label class="row"><span>等待确认时通知</span><input type="checkbox" data-cfg="notifyWaiting" /></label>
+          <label class="row"><span>失败播放提示音</span><input type="checkbox" data-cfg="soundOnFailed" /></label>
+          <hr />
+          <label class="row"><span>出错时<b>自动</b>重试</span><input type="checkbox" data-cfg="autoRetry" /></label>
+          <label class="row"><span>重试发送内容</span><input type="text" data-cfg="retryMessage" class="text-in" /></label>
+          <label class="row"><span>重试后自动回车</span><input type="checkbox" data-cfg="retrySend" /></label>
+          <hr />
+          <label class="row"><span>卡住判定阈值（秒）</span><input type="number" min="20" step="10" data-cfg="stuckSeconds" class="num-in" /></label>
+          <label class="row"><span>显示最近（小时）</span><input type="number" min="1" step="1" data-cfg="activeWithinHours" class="num-in" /></label>
+          <label class="row"><span>窗口置顶</span><input type="checkbox" data-cfg="alwaysOnTop" /></label>
+          <div class="hint">重试依赖「辅助功能」权限：系统设置 › 隐私与安全性 › 辅助功能。</div>
+          <button class="quit-btn nodrag" id="btn-quit">退出监控</button>
+          <div class="hint" id="version" style="text-align:center;margin-top:10px;"></div>
+        </div>
+      </section>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,324 @@
+:root {
+  --bg: rgba(28, 28, 32, 0.72);
+  --bg-solid: #1c1c20;
+  --row: rgba(255, 255, 255, 0.05);
+  --row-hover: rgba(255, 255, 255, 0.1);
+  --text: #f2f2f5;
+  --text-dim: #a1a1aa;
+  --border: rgba(255, 255, 255, 0.08);
+
+  --running: #3b82f6;
+  --waiting: #f59e0b;
+  --done: #22c55e;
+  --failed: #ef4444;
+  --stuck: #a855f7;
+  --idle: #9ca3af;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---------- 标题栏 ---------- */
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.logo {
+  font-size: 14px;
+  color: var(--running);
+}
+.title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.counts {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.nodrag {
+  -webkit-app-region: no-drag;
+}
+.titlebar-right {
+  display: flex;
+  gap: 4px;
+}
+.icon-btn {
+  -webkit-app-region: no-drag;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+/* ---------- 列表 ---------- */
+.list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+}
+.list::-webkit-scrollbar {
+  width: 6px;
+}
+.list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 40px 12px;
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: var(--row);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.card:hover {
+  background: var(--row-hover);
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.dot.running {
+  background: var(--running);
+  animation: pulse 1.3s infinite;
+}
+.dot.waiting {
+  background: var(--waiting);
+}
+.dot.done {
+  background: var(--done);
+}
+.dot.failed {
+  background: var(--failed);
+}
+.dot.stuck {
+  background: var(--stuck);
+  animation: pulse 1.3s infinite;
+}
+.dot.cancelled,
+.dot.idle {
+  background: var(--idle);
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.card-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.card-title {
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.state-label {
+  font-weight: 600;
+}
+.state-label.running {
+  color: var(--running);
+}
+.state-label.waiting {
+  color: var(--waiting);
+}
+.state-label.done {
+  color: var(--done);
+}
+.state-label.failed {
+  color: var(--failed);
+}
+.state-label.stuck {
+  color: var(--stuck);
+}
+.state-label.cancelled,
+.state-label.idle {
+  color: var(--idle);
+}
+.ws {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.retry-btn {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  align-self: center;
+  background: var(--failed);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.retry-btn.stuck {
+  background: var(--stuck);
+}
+.retry-btn:hover {
+  filter: brightness(1.12);
+}
+.retry-btn:active {
+  transform: scale(0.96);
+}
+.retry-btn.busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ---------- 设置 ---------- */
+.settings {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-solid);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.settings.hidden {
+  display: none;
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+.settings-body {
+  padding: 8px 12px;
+  overflow-y: auto;
+}
+.settings-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.settings .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+  font-size: 12.5px;
+}
+.settings .row span b {
+  color: var(--failed);
+}
+.text-in {
+  width: 96px;
+  background: var(--row);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.num-in {
+  width: 64px;
+  background: var(--row);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.quit-btn {
+  width: 100%;
+  margin-top: 6px;
+  background: transparent;
+  color: var(--failed);
+  border: 1px solid var(--failed);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.quit-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+}

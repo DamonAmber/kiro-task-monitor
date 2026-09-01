@@ -1,0 +1,31 @@
+{
+  "name": "kiro-task-monitor",
+  "productName": "Kiro 任务监控",
+  "version": "0.1.0",
+  "description": "Mac 桌面浮窗，实时监控所有 Kiro 会话任务：运行中 / 已完成 / 出错需重试，失败一键重试、完成弹通知。",
+  "main": "main.js",
+  "private": true,
+  "author": "DamonAmber",
+  "license": "MIT",
+  "homepage": "https://github.com/DamonAmber/kiro-task-monitor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DamonAmber/kiro-task-monitor.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "watch": "node tools/watch-cli.js",
+    "watch:once": "node tools/watch-cli.js --once",
+    "icon": "node tools/make-icon.js",
+    "pack": "electron-builder --dir",
+    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",
+    "release": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
