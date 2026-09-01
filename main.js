@@ -24,6 +24,8 @@ let win = null;
 let config = null;
 let pollTimer = null;
 let lastSessions = [];
+let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
+let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 
 // 上一轮每个会话的状态，用于检测“状态跳变”并触发通知
 // key -> { state, waitingSince, notifiedDone }
@@ -349,6 +351,38 @@ function startPolling() {
   pollTimer = setInterval(poll, config.get('pollMs') || 2000);
 }
 
+/**
+ * 退出并安装更新，然后自动重启。
+ * 菜单栏应用有两处会拦住"真正退出"：window-all-closed 的 preventDefault、
+ * 以及窗口的 close 钩子。这里先放行/清理，再调用 quitAndInstall。
+ * 关键：quitAndInstall(isSilent=false, isForceRunAfter=true) 的第二个参数为 true
+ * 才会在安装后**自动重启**——默认 false 会导致"退出但不重启，得手动打开"。
+ */
+function restartToUpdate() {
+  if (quittingForUpdate) return;
+  quittingForUpdate = true;
+  // 解除「关闭所有窗口不退出」守卫
+  app.removeAllListeners('window-all-closed');
+  // 主动销毁窗口，避免 close 钩子阻挠退出
+  for (const w of BrowserWindow.getAllWindows()) {
+    try {
+      w.removeAllListeners('close');
+      w.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+  // 延后一拍，确保通知回调先返回，再触发安装与重启
+  setImmediate(() => {
+    try {
+      autoUpdater.quitAndInstall(false, true);
+    } catch (e) {
+      console.error('[update] quitAndInstall 失败，回退到普通退出：', e && e.message);
+      app.quit(); // 至少退出，退出时会安装（autoInstallOnAppQuit）
+    }
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * 自动更新（仅打包后的正式版启用；从 GitHub Releases 检查）
  * ------------------------------------------------------------------ */
@@ -362,13 +396,15 @@ function setupAutoUpdate() {
   autoUpdater.on('update-not-available', () => console.log('[update] 已是最新'));
   autoUpdater.on('update-downloaded', (i) => {
     if (!Notification.isSupported()) return;
-    const n = new Notification({
+    updateNotification = new Notification({
       title: '更新已就绪',
-      body: `新版本 ${i && i.version} 已下载完成，退出后自动安装。点此立即重启更新。`,
+      body: `新版本 ${i && i.version} 已下载。点此立即重启更新（或稍后退出时自动安装）。`,
       silent: false,
+      actions: [{ type: 'button', text: '立即重启' }],
     });
-    n.on('click', () => autoUpdater.quitAndInstall());
-    n.show();
+    updateNotification.on('click', restartToUpdate);
+    updateNotification.on('action', restartToUpdate);
+    updateNotification.show();
   });
 
   const check = () => autoUpdater.checkForUpdates().catch(() => {});
@@ -420,7 +456,7 @@ app.whenReady().then(() => {
   });
 });
 
-// 菜单栏应用：关闭所有窗口不退出
+// 菜单栏应用：平时关闭所有窗口不退出；但为安装更新而退出时放行
 app.on('window-all-closed', (e) => {
-  e.preventDefault();
+  if (!quittingForUpdate) e.preventDefault();
 });
