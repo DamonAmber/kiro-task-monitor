@@ -24,9 +24,14 @@ const {
   WORKSPACE_STORAGE_DIR,
 } = require('./kiroPaths');
 
-// 用命令行匹配 Kiro 主/辅助进程的可执行文件路径（Electron 应用）。
-// 注意：监控自身是「Kiro 任务监控.app」，其路径不含子串 "Kiro.app"，不会自匹配。
-const KIRO_PROC_PATTERN = 'Kiro.app/Contents/MacOS/';
+// 用命令行匹配 Kiro 的进程（主进程 + 各 Helper 都在 Kiro.app/Contents/ 下）。
+// 注意：
+//   - 用 `Kiro\.app/Contents/`（转义点）而非更窄的 `.../MacOS/`：主进程实为
+//     `Kiro.app/Contents/MacOS/Electron`，实测 macOS `pgrep -f` 匹配不到该 `/MacOS/` 段，
+//     只有匹配 `Kiro.app/Contents/`（各 Helper 路径）才稳定命中——否则会误判 Kiro 未运行、
+//     把运行中的会话错标成「已中断」（曾导致偶现误判）。
+//   - 监控自身是「Kiro 任务监控.app」、以及「Kiro CLI.app」，其路径都不含子串 "Kiro.app"，不会误匹配。
+const KIRO_PROC_PATTERN = 'Kiro\\.app/Contents/';
 
 /** 把 `file:///Users/...` 或普通路径统一成去尾斜杠的本地路径，便于与 workspacePath 比对。 */
 function normFolder(uriOrPath) {

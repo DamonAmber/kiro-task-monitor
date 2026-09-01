@@ -65,7 +65,12 @@ electron-builder.yml 打包/签名/公证/发布配置
   - 及时：`main.js` 用 `fs.watch(SESSIONS_DIR, {recursive})` 事件驱动，写入即去抖(200ms)触发 `poll()`，另有定时轮询兜底。
   - 性能：`scanSessions` 有 `_scanCache`，按 session.json / messages.jsonl 的 `mtime+size` 跳过未变会话的读文件+解析（`deriveState` 拆成 `parseSignals`+`decideState`，缓存信号、只用最新 now 轻量重算）。
     窗口上下文改为**异步缓存**：`readOpenWindowContextAsync` 每 ~8s 刷新到 `cachedWinCtx`，`poll` 复用它（不再每轮同步 `spawn sqlite3`）。
-  - 中断判定：`isKiroRunningAsync`(pgrep 匹配 `Kiro.app/Contents/MacOS/`) 得 `kiroRunning`。`decideState` 里 `kiroRunning===false` 且判为运行中/卡住 → 置 `interrupted=true` 并锁定 STUCK（不受 `stuckDetection` 开关降级影响）。**必须 fail-safe**：pgrep 缺失/异常时 `kiroRunning=undefined`，绝不判中断（否则会把在跑的会话误标中断）。中断会话不弹通知、不自动重试；UI 显示「已中断」。
+  - 中断判定：`isKiroRunningAsync`(pgrep) 得 `kiroRunning`。`decideState` 里 `kiroRunning===false` 且判为运行中/卡住 → 置 `interrupted=true` 并锁定 STUCK（不受 `stuckDetection` 开关降级影响）。**必须 fail-safe**：pgrep 缺失/异常时 `kiroRunning=undefined`，绝不判中断（否则会把在跑的会话误标中断）。中断会话不弹通知、不自动重试；UI 显示「已中断」。
+    - ⚠️ pgrep 模式必须用 `Kiro\.app/Contents/`（匹配各 Helper），**别用 `.../MacOS/`**：主进程是
+      `Kiro.app/Contents/MacOS/Electron`，实测 macOS `pgrep -f` 匹配不到该 `/MacOS/` 段 → 会全程误判 Kiro 未运行 →
+      运行中会话被错标「已中断」（曾发生）。改这里务必真机 `pgrep` 验证命中数 ≥1。
+    - 防抖：`main.js` 的 `effectiveKiroRunning()` 要求 Kiro 被**持续**判定未运行超过 `KIRO_DOWN_CONFIRM_MS`(20s，
+      靠 `kiroDownSince` 计时)才返回 false，吸收 pgrep 偶发漏读；未确认期间返回 undefined(不判中断)。poll 用它而非裸 `cachedWinCtx.kiroRunning`。
   - 休眠：`powerMonitor.on('resume')` 重置 `seeded=false` 重建通知基线，避免对睡眠期间的跳变补发通知。
 - **只读卷 / App Translocation**：App 若从 DMG 或「下载」目录运行，macOS 会路径随机化为只读，Squirrel
   无法自更新（报 `Cannot update while running on a read-only volume`）。`main.js` 在 `whenReady` 早期调

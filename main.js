@@ -42,6 +42,10 @@ let lastUsage = { ok: false, primary: null, breakdowns: [], timestamp: null };
 let cachedWinCtx = null;
 let cachedClaudePids = null; // 当前存活的 Claude 会话进程 pid 集（异步刷新；null=未知，不判中断）
 let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时才重绘图标）
+let kiroDownSince = 0; // Kiro 首次被判定为「未运行」的时刻（0=当前认为在运行/未知）
+// 中断判定防抖：Kiro 需被「持续」判定未运行超过该时长，才认定确实退出。
+// 避免 pgrep 偶发漏读把运行中的会话瞬间错标为「已中断」。
+const KIRO_DOWN_CONFIRM_MS = 20 * 1000;
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
@@ -428,7 +432,7 @@ function poll() {
     onlyFocusedSession: !!config.get('onlyFocusedSession'),
     // 复用异步刷新的窗口上下文（不在轮询里同步 spawn sqlite3）；null 时降级为不过滤
     windowContext: cachedWinCtx,
-    kiroRunning: cachedWinCtx ? cachedWinCtx.kiroRunning : undefined,
+    kiroRunning: effectiveKiroRunning(), // 带防抖，避免 pgrep 偶发漏读误判中断
   });
 
   // Claude Code 会话（只读；可在设置里关闭）。与 Kiro 合并后统一排序。
@@ -466,6 +470,13 @@ async function refreshWinCtx() {
   } catch {
     /* 读取失败保留上次值，不致命 */
   }
+  // 维护「Kiro 持续未运行」计时：只有明确 false 才开始计时；true/未知则清零
+  const kr = cachedWinCtx ? cachedWinCtx.kiroRunning : undefined;
+  if (kr === false) {
+    if (!kiroDownSince) kiroDownSince = Date.now();
+  } else {
+    kiroDownSince = 0;
+  }
   // 顺带异步刷新 Claude 会话进程存活集（供中断判定/过滤已结束会话）
   if (config.get('watchClaude') !== false) {
     try {
@@ -480,6 +491,19 @@ function startWinCtxPolling() {
   if (winCtxTimer) clearInterval(winCtxTimer);
   // 窗口/面板状态与 Kiro 进程存活变化较慢，8s 刷新一次足够，且不阻塞轮询
   winCtxTimer = setInterval(refreshWinCtx, 8000);
+}
+
+/**
+ * 用于中断判定的「Kiro 是否在运行」——带防抖：
+ * 只有当 Kiro 被**持续**判定未运行超过 KIRO_DOWN_CONFIRM_MS 才返回 false（确实退出），
+ * 短暂/偶发的未命中返回 undefined（未知→不判中断），避免误标「已中断」。
+ */
+function effectiveKiroRunning() {
+  const kr = cachedWinCtx ? cachedWinCtx.kiroRunning : undefined;
+  if (kr === false) {
+    return kiroDownSince && Date.now() - kiroDownSince >= KIRO_DOWN_CONFIRM_MS ? false : undefined;
+  }
+  return kr; // true 或 undefined 原样返回
 }
 
 // fs.watch 去抖：会话目录一有写入，200ms 内合并为一次 poll（亚秒级反映状态变化）
