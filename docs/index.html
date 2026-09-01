@@ -170,6 +170,16 @@
       .step .n { width: 30px; height: 30px; border-radius: 50%; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 12px; }
       .step h3 { font-size: 16px; margin-bottom: 6px; } .step p { font-size: 14px; color: var(--dim); }
 
+      /* 更新日志 */
+      .changelog { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+      .cl-item { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: start; }
+      @media (max-width: 560px) { .cl-item { grid-template-columns: 1fr; gap: 6px; } }
+      .cl-ver { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
+      .cl-ver .tag { font-size: 12px; color: var(--blue); background: var(--bg2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+      .cl-body { color: var(--dim); font-size: 14.5px; line-height: 1.65; }
+      .cl-body b { color: var(--text); font-weight: 600; }
+      .cl-new { display: inline-block; font-size: 11px; font-weight: 700; color: var(--green); background: rgba(34,197,94,.12); border-radius: 5px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
+
       .how { max-width: 760px; margin: 0 auto; }
       .how p { color: var(--dim); margin-bottom: 14px; font-size: 15px; }
       code { background: var(--bg2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 6px; font-size: 13px; color: #cdd3dc; }
@@ -186,6 +196,7 @@
         <nav class="nav-links">
           <a href="#features" class="hide-sm">功能</a>
           <a href="#usage" class="hide-sm">使用</a>
+          <a href="#changelog" class="hide-sm">更新日志</a>
           <a href="#install" class="hide-sm">安装</a>
           <a href="https://github.com/DamonAmber/kiro-task-monitor" target="_blank" rel="noopener">GitHub</a>
         </nav>
@@ -347,6 +358,36 @@
         <div class="note">
           🔐 首次点「重试」时，macOS 会请求「辅助功能」与「自动化（控制 Kiro）」权限，允许一次即可
           （仅查看状态与接收通知无需任何权限）。
+        </div>
+      </div>
+    </section>
+
+    <!-- 更新日志 -->
+    <section id="changelog">
+      <div class="wrap">
+        <h2 class="section-title">更新日志</h2>
+        <p class="section-sub">下载按钮始终指向最新版；升级后自动生效</p>
+        <div class="changelog">
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.6.0</span></div>
+            <div class="cl-body"><span class="cl-new">新增</span>也能监控 <b>Claude Code</b> 会话：运行中 / 完成 / 失败 / 中断，与 Kiro 会话在同一浮窗里用<b>来源色片</b>一眼区分（只读展示，可在设置里关闭）。</div>
+          </div>
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.5.0</span></div>
+            <div class="cl-body"><span class="cl-new">新增</span>菜单栏在有任务出错 / 卡住时显示<b>红点提醒</b>；标题栏状态计数改为更清晰的中文；状态识别更准、更及时，并做了性能优化。</div>
+          </div>
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.4.0</span></div>
+            <div class="cl-body"><span class="cl-new">新增</span>菜单栏改用简洁的 <b>◐ 图标</b>，后面只跟当前运行中的会话数。<span style="opacity:.75">（随后小版本修复了若干已知问题）</span></div>
+          </div>
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.3.0</span></div>
+            <div class="cl-body"><span class="cl-new">新增</span>浮窗底部显示 <b>套餐用量</b>：剩余额度 / 已用百分比 / 是否超额 / 重置倒计时，接近上限变黄、超额变红。</div>
+          </div>
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">更早</span></div>
+            <div class="cl-body">基础能力：跨工作区实时监控所有会话、失败一键重试、完成即时通知、菜单栏概览、已签名公证 + 自动更新。</div>
+          </div>
         </div>
       </div>
     </section>
