@@ -187,13 +187,13 @@ function notify({ title, body, session, isFailure }) {
     actions: session ? [{ type: 'button', text: isFailure ? '重试' : '查看' }] : [],
   });
   n.on('click', () => {
-    if (session) retry.focusWorkspaceWindow(session.workspaceName);
+    if (session) retry.focusWorkspaceWindow({ workspacePath: session.workspacePath, workspaceName: session.workspaceName });
     if (win) win.show();
   });
   n.on('action', () => {
     if (!session) return;
     if (isFailure) doRetry(session);
-    else retry.focusWorkspaceWindow(session.workspaceName);
+    else retry.focusWorkspaceWindow({ workspacePath: session.workspacePath, workspaceName: session.workspaceName });
   });
   n.show();
   if (isFailure && config.get('soundOnFailed')) playSound('Basso');
@@ -296,6 +296,7 @@ function handleTransitions(sessions, now) {
  * ------------------------------------------------------------------ */
 async function doRetry(session) {
   const r = await retry.retrySession({
+    workspacePath: session.workspacePath,
     workspaceName: session.workspaceName,
     message: config.get('retryMessage') || '继续',
     send: config.get('retrySend') !== false,
@@ -328,7 +329,8 @@ function poll() {
   const sessions = scanSessions({
     now,
     activeWithinMs: (config.get('activeWithinHours') || 24) * 3600 * 1000,
-    stuckMs: (config.get('stuckSeconds') || 120) * 1000,
+    stuckMs: (config.get('stuckSeconds') || 240) * 1000,
+    toolStuckMs: (config.get('toolStuckSeconds') || 900) * 1000,
     onlyOpenSessions: config.get('onlyOpenSessions') !== false,
     onlyFocusedSession: !!config.get('onlyFocusedSession'),
   });
@@ -391,7 +393,7 @@ function registerIpc() {
   });
   ipcMain.handle('session:focus', async (_e, payload) => {
     const s = lastSessions.find((x) => x.key === (payload && payload.key)) || payload || {};
-    return retry.focusWorkspaceWindow(s.workspaceName);
+    return retry.focusWorkspaceWindow({ workspacePath: s.workspacePath, workspaceName: s.workspaceName });
   });
   ipcMain.handle('window:hide', () => win && win.hide());
   ipcMain.handle('app:quit', () => app.quit());

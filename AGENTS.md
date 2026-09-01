@@ -12,9 +12,11 @@ main.js              Electron 主进程：浮窗/托盘/原生通知/轮询调�
 preload.js           contextBridge 安全桥接（window.api.*）
 src/
   watcher.js         ★核心：扫描会话 + tail 消息流 → 推导每个会话的实时状态（deriveState）
-  retry.js           一键重试/聚焦窗口：AppleScript(osascript) 驱动
+  openWindows.js     只读 Kiro 窗口状态（storage.json + workspaceStorage/*/state.vscdb）→
+                     判断哪些会话真正打开/聚焦，供 watcher 过滤残留、标注 isFocused
+  retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底
   config.js          配置读写（userData/config.json）
-  kiroPaths.js       ~/.kiro 路径
+  kiroPaths.js       ~/.kiro 与 Kiro 应用数据（Application Support/Kiro）路径
 renderer/            浮窗 UI（index.html / styles.css / renderer.js）
 tools/
   watch-cli.js       无界面终端版监控（不启动 Electron，最快的调试/验证入口）
@@ -30,13 +32,18 @@ electron-builder.yml 打包/签名/公证/发布配置
 - 同目录 `messages.jsonl`（逐行 `{id,timestamp,payload}`），关键 `payload.type`：
   - `turn_start` / `turn_end`（`turn_end.stopReason`：`end_turn`=正常；`error|failed|aborted`=**失败需重试**；`cancelled`=取消）
   - `pending_interaction` / `interaction_resolved`（未解决=**停下等用户**）
-- 状态优先级与卡死兜底：见 `src/watcher.js` 的 `deriveState`（运行中但超 `stuckSeconds` 无写入 → `stuck`）。
+  - `tool_call` / `tool_result`（按 `toolCallId` 配对）：有未配对的 = 有**在途工具**在跑，卡住宽限更长
+- 状态优先级与卡死兜底：见 `src/watcher.js` 的 `deriveState`。卡住检测是**上下文感知**的：
+  无在途工具时超 `stuckSeconds`(默认 240s) 判 `stuck`；有工具在执行时用 `toolStuckSeconds`(默认 900s)。
 - 单个超长 turn 的 `turn_start` 可能超出 tail 窗口（默认 512KB）→ 回退用 `session.json.status`，状态仍准，仅耗时未知。
+- **只显示真正打开的会话**：`openWindows.js` 只读 `~/Library/Application Support/Kiro/User/globalStorage/storage.json`
+  （当前打开/激活的窗口）与各窗口 `workspaceStorage/<hash>/state.vscdb`（`kiro.kiroAgent.sessionPanels.entries/focused`，
+  用系统 `sqlite3 -readonly` 读），据此过滤历史残留会话并标注 `isFocused`。读不到时安全回退为不过滤。
 
 ## 铁律（容易踩雷）
 1. **只读 `~/.kiro`**：任何情况下都不要写入/修改 Kiro 的会话文件。
 2. **不要改 `appId`（`com.damonamber.kiro-task-monitor`）或 .app 名**：会重置用户的「辅助功能/自动化」授权并断开自动更新身份连续性。
-3. **一键重试的前提**：Kiro 窗口标题 == 工作区文件夹名（据此用 AppleScript 定位窗口）；`⌘L` 聚焦聊天输入框后粘贴「继续」回车。依赖 macOS「辅助功能」权限。同一工作区多标签时，`⌘L` 只作用于**当前激活标签**（已知限制）。
+3. **聚焦 / 一键重试**：优先用 `kiro <工作区路径>`(VS Code 风格 CLI) 把窗口带到前台——可靠跨 Space、能切到**全屏**窗口；CLI 不可用才退回 AppleScript(按窗口标题匹配工作区名，全屏时可能切不过去)。重试再 `⌘L` 聚焦聊天输入框后粘贴「继续」回车,依赖 macOS「辅助功能」权限。同一工作区多标签时，`⌘L` 只作用于**当前激活标签**（已知限制）。
 4. **发版只走打 tag → CI**（见 RELEASE.md）；`.env` 只用于本地应急且**永不提交**；CI 凭据在 GitHub Secrets。
 5. **版本号与 git tag 必须一致**：一律用 `npm version` 同步，别手动分开操作。
 6. **功能有增改，必须同步更新落地页**：任何新增/改动的用户可见功能，都要在同一次改动里更新 `docs/index.html`

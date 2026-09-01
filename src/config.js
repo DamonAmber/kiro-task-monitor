@@ -8,7 +8,8 @@ const DEFAULT_CONFIG = {
   activeWithinHours: 24, // 只显示最近 N 小时活跃的会话（作为二级过滤）
   onlyOpenSessions: true, // 只显示当前 Kiro 窗口里真正打开着的会话（剔除历史残留）
   onlyFocusedSession: false, // 每个窗口只显示当前聚焦（激活）的那个会话
-  stuckSeconds: 120, // 运行中但 N 秒无写入 → 判定卡住
+  stuckSeconds: 240, // 运行中、且无工具在执行时，超 N 秒无写入 → 判定卡住
+  toolStuckSeconds: 900, // 有工具在执行（长命令/构建/测试）时用更长宽限，超 N 秒才判卡住
   notifyMinTurnSeconds: 25, // 完成通知的最短耗时门槛（过滤秒回的短轮次）
 
   notifyFailed: true, // 出错/卡住通知

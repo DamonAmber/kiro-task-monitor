@@ -23,7 +23,8 @@ const FAIL_REASONS = new Set(['error', 'failed', 'aborted']);
 
 // 默认阈值
 const DEFAULTS = {
-  stuckMs: 120 * 1000, // 运行中但 120s 无写入 → 判定 stuck
+  stuckMs: 240 * 1000, // 运行中、且无工具在执行时，超 240s 无写入 → 判定 stuck
+  toolStuckMs: 900 * 1000, // 有工具调用在执行（等结果）时用更长的宽限：超 15min 才判 stuck
   tailBytes: 512 * 1024, // 每个 messages.jsonl 读取末尾字节数（覆盖单个长 turn）
   activeWithinMs: 24 * 60 * 60 * 1000, // 只关心最近 24h 内有活动的会话
 };
@@ -105,6 +106,7 @@ function readSessionMeta(sessionJsonPath) {
 
 function deriveState(meta, lines, mtimeMs, now, opts) {
   const stuckMs = (opts && opts.stuckMs) || DEFAULTS.stuckMs;
+  const toolStuckMs = (opts && opts.toolStuckMs) || DEFAULTS.toolStuckMs;
 
   let lastTurnStartTs = 0;
   let lastTurnEnd = null; // { ts, stopReason }
@@ -115,6 +117,10 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
   const pendingById = new Map();
   const pendingStack = [];
   let lastPending = null;
+
+  // 跟踪未返回结果的 tool_call（toolCallId → {ts, name}）：
+  // 有在途工具 = agent 正在等命令/构建等长任务的结果，属正常运行，卡住宽限更长。
+  const inflightTools = new Map();
 
   for (const ev of lines) {
     const p = ev && ev.payload;
@@ -128,6 +134,14 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
         break;
       case 'turn_end':
         lastTurnEnd = { ts: t, stopReason: p.stopReason || 'end_turn' };
+        // 一轮结束，本轮遗留的在途工具作废
+        inflightTools.clear();
+        break;
+      case 'tool_call':
+        if (p.toolCallId) inflightTools.set(p.toolCallId, { ts: t, name: p.toolName || '' });
+        break;
+      case 'tool_result':
+        if (p.toolCallId) inflightTools.delete(p.toolCallId);
         break;
       case 'user':
         lastUserTs = t;
@@ -171,17 +185,30 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
       ? lastPending
       : null;
 
+  // 本轮内是否有工具仍在执行（tool_call 未见 tool_result）
+  let inflightToolTs = 0;
+  let inflightToolName = '';
+  for (const it of inflightTools.values()) {
+    if (it.ts >= lastTurnStartTs && it.ts > inflightToolTs) {
+      inflightToolTs = it.ts;
+      inflightToolName = it.name;
+    }
+  }
+  const hasInflightTool = inflightToolTs > 0;
+
   let state;
   let stopReason = lastTurnEnd ? lastTurnEnd.stopReason : '';
   let question = '';
   let elapsedMs = 0;
 
   if (turnOpen) {
+    // 有工具在执行时用更长的卡住宽限（长命令/构建/测试属正常），避免误报
+    const effectiveStuckMs = hasInflightTool ? toolStuckMs : stuckMs;
     if (openPending) {
       state = STATE.WAITING;
       question = openPending.question ? String(openPending.question).slice(0, 140) : '';
       elapsedMs = now - openPending.ts;
-    } else if (idleFor > stuckMs) {
+    } else if (idleFor > effectiveStuckMs) {
       state = STATE.STUCK;
       elapsedMs = now - lastTurnStartTs;
     } else {
@@ -225,6 +252,7 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
     question,
     elapsedMs, // running/waiting：本轮已运行时长；done/failed：本轮耗时
     idleMs: idleFor, // 距上次写入时长（用于展示与卡死判断）
+    runningTool: turnOpen && hasInflightTool ? (inflightToolName || 'tool') : '', // 正在执行的工具名
     lastActivityMs,
     turnDurationMs: lastTurnEnd && lastTurnStartTs > 0 && !turnOpen
       ? lastTurnEnd.ts - lastTurnStartTs
@@ -340,6 +368,7 @@ function scanSessions(opts = {}) {
   const now = opts.now || Date.now();
   const activeWithinMs = opts.activeWithinMs ?? DEFAULTS.activeWithinMs;
   const stuckMs = opts.stuckMs ?? DEFAULTS.stuckMs;
+  const toolStuckMs = opts.toolStuckMs ?? DEFAULTS.toolStuckMs;
   const tailBytes = opts.tailBytes ?? DEFAULTS.tailBytes;
 
   const dirs = listSessionDirs();
@@ -360,7 +389,7 @@ function scanSessions(opts = {}) {
     if (!meta) continue;
 
     const { lines, mtimeMs } = tailJsonLines(d.messages, tailBytes);
-    const derived = deriveState(meta, lines, Math.max(mtimeMs, msgMtime), now, { stuckMs });
+    const derived = deriveState(meta, lines, Math.max(mtimeMs, msgMtime), now, { stuckMs, toolStuckMs });
 
     out.push({
       key: meta.id || d.dir,
@@ -380,7 +409,11 @@ function scanSessions(opts = {}) {
   // —— 只保留「当前 Kiro 窗口里真正打开/激活的会话」，剔除历史残留 —— //
   out = applyOpenWindowFilter(out, opts);
 
-  // 排序：需要关注的（failed/stuck/waiting）优先，然后按最近活动倒序
+  // 排序（从上到下）：
+  //   1) 需要处理的（failed/stuck）始终置顶——这是工具的核心价值，别被埋没；
+  //   2) 其次是你当前聚焦（激活）的会话——「把活跃会话往前排」；
+  //   3) 再按状态优先级（waiting → running → done → …）；
+  //   4) 最后按最近活动时间倒序。
   const priority = {
     [STATE.FAILED]: 0,
     [STATE.STUCK]: 1,
@@ -390,7 +423,14 @@ function scanSessions(opts = {}) {
     [STATE.CANCELLED]: 5,
     [STATE.IDLE]: 6,
   };
+  const needsAttention = (s) => (s.state === STATE.FAILED || s.state === STATE.STUCK ? 0 : 1);
   out.sort((a, b) => {
+    const aa = needsAttention(a);
+    const ab = needsAttention(b);
+    if (aa !== ab) return aa - ab;
+    const fa = a.isFocused ? 0 : 1;
+    const fb = b.isFocused ? 0 : 1;
+    if (fa !== fb) return fa - fb;
     const pa = priority[a.state] ?? 9;
     const pb = priority[b.state] ?? 9;
     if (pa !== pb) return pa - pb;
