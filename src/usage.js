@@ -53,13 +53,21 @@ function normalizeBreakdown(b) {
   const usageLimit = Number(b.usageLimit) || 0;
   const currentUsage = Number(b.currentUsage) || 0;
   const currentOverages = Number(b.currentOverages) || 0;
+  const overageCharges = Number(b.overageCharges) || 0;
   // percentageUsed 优先用官方值，缺失时按 usage/limit 估算
   let percentageUsed = Number(b.percentageUsed);
   if (!Number.isFinite(percentageUsed)) {
     percentageUsed = usageLimit > 0 ? (currentUsage / usageLimit) * 100 : 0;
   }
   const remaining = usageLimit > 0 ? Math.max(usageLimit - currentUsage, 0) : 0;
-  const overLimit = currentOverages > 0 || (usageLimit > 0 && currentUsage >= usageLimit);
+  // 「额度已耗尽」判据：只取安全方向的信号——一个周期内真实用量只增不减、
+  // 缓存值永远 ≤ 真实值，所以下面任一为真即可确信真实已耗尽（只会漏报、绝不误报）。
+  // 拿不到真实超额数（Kiro 未落盘），故不暴露「超了多少」，只给布尔量给 UI 用。
+  const overLimit =
+    currentOverages > 0 ||
+    overageCharges > 0 ||
+    percentageUsed >= 100 ||
+    (usageLimit > 0 && currentUsage >= usageLimit);
   const currency = b.currency && typeof b.currency === 'object' ? b.currency : { code: '', symbol: '' };
 
   return {
@@ -74,7 +82,7 @@ function normalizeBreakdown(b) {
     percentageUsed,
     overLimit,
     currentOverages,
-    overageCharges: Number(b.overageCharges) || 0,
+    overageCharges,
     overageRate: Number(b.overageRate) || 0,
     overageCap: Number(b.overageCap) || 0,
     resetDate: b.resetDate || null,

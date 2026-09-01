@@ -294,19 +294,17 @@ function renderUsage() {
 
   const pct = Math.max(0, Math.min(100, Number(p.percentageUsed) || 0));
   const unit = p.displayNamePlural || 'Credits';
-  const sym = (p.currency && p.currency.symbol) || '';
 
-  // 颜色分级：超额=红，>=80% 预警=黄，否则正常=绿
+  // 颜色分级：耗尽=红，>=80% 预警=黄，否则正常=绿
   usageEl.classList.remove('ok', 'warn', 'over');
   const level = p.overLimit ? 'over' : pct >= 80 ? 'warn' : 'ok';
   usageEl.classList.add(level);
   usageFillEl.style.width = (p.overLimit ? 100 : pct) + '%';
 
   if (p.overLimit) {
-    const over = p.currentOverages || Math.max(p.currentUsage - p.usageLimit, 0);
-    const charge = p.overageCharges > 0 ? ` · ${sym}${fmtNum(p.overageCharges)}` : '';
-    usageMainEl.textContent = `已超 ${fmtNum(over)} ${unit}${charge}`;
-    usagePctEl.textContent = `${fmtNum(pct)}%`;
+    // 真实超额数 Kiro 未落盘、拿不到，故不显示「超了多少」，只报「已耗尽」。
+    usageMainEl.textContent = '额度已耗尽';
+    usagePctEl.textContent = '已满';
   } else {
     usageMainEl.textContent = `剩 ${fmtNum(p.remaining)} / ${fmtNum(p.usageLimit)} ${unit}`;
     usagePctEl.textContent = `${fmtNum(pct)}%`;
@@ -316,15 +314,22 @@ function renderUsage() {
   const freshTxt = u.timestamp ? `更新于 ${fmtAgo(u.timestamp)}` : '';
   usageSubEl.textContent = [resetTxt, freshTxt].filter(Boolean).join(' · ');
 
-  // 悬停看完整明细
-  const tip = [
-    `已用 ${fmtNum(p.currentUsage)} / ${fmtNum(p.usageLimit)} ${unit}（${fmtNum(pct)}%）`,
+  // 悬停看明细。超额时不展示具体数字（拿不到真实值），只提示已耗尽。
+  const tip = (
     p.overLimit
-      ? `超额 ${fmtNum(p.currentOverages)} ${unit}，费用 ${sym}${fmtNum(p.overageCharges)}${p.overageRate ? `（单价 ${sym}${p.overageRate}）` : ''}`
-      : `剩余 ${fmtNum(p.remaining)} ${unit}`,
-    p.resetDate ? `重置日 ${new Date(p.resetDate).toLocaleDateString()}` : '',
-    u.timestamp ? `数据更新于 ${fmtAgo(u.timestamp)}` : '',
-  ]
+      ? [
+          `额度已耗尽（含超额部分）`,
+          `套餐额度 ${fmtNum(p.usageLimit)} ${unit}`,
+        ]
+      : [
+          `已用 ${fmtNum(p.currentUsage)} / ${fmtNum(p.usageLimit)} ${unit}（${fmtNum(pct)}%）`,
+          `剩余 ${fmtNum(p.remaining)} ${unit}`,
+        ]
+  )
+    .concat([
+      p.resetDate ? `重置日 ${new Date(p.resetDate).toLocaleDateString()}` : '',
+      u.timestamp ? `数据更新于 ${fmtAgo(u.timestamp)}` : '',
+    ])
     .filter(Boolean)
     .join('\n');
   usageEl.title = tip;
