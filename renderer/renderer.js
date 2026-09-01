@@ -69,16 +69,24 @@ function render(sessions) {
           : '';
       const reason =
         s.state === 'failed' && s.stopReason ? ` · ${esc(s.stopReason)}` : '';
-      const btn = isFail
-        ? `<button class="retry-btn ${s.state === 'stuck' ? 'stuck' : ''}" data-retry="${esc(s.key)}">重试</button>`
-        : '';
+      const isClaude = s.source === 'claude';
+      // 来源色片：Kiro（蓝）/ Claude（橙）——一眼区分，简洁
+      const srcChip = `<span class="src ${isClaude ? 'src-claude' : 'src-kiro'}">${isClaude ? 'Claude' : 'Kiro'}</span>`;
+      // Claude 会话无法可靠重试/聚焦终端 → 只读：不给重试按钮、卡片不可点聚焦
+      const btn =
+        isFail && !isClaude
+          ? `<button class="retry-btn ${s.state === 'stuck' ? 'stuck' : ''}" data-retry="${esc(s.key)}">重试</button>`
+          : '';
       const focusTag = s.isFocused ? '<span class="focus-tag" title="该窗口当前聚焦的会话">当前</span>' : '';
+      const focusAttr = isClaude ? '' : ` data-focus="${esc(s.key)}"`;
+      const cardTitle = isClaude ? ' title="Claude Code 会话（只读）"' : '';
       return `
-      <div class="card${s.isFocused ? ' focused' : ''}" data-focus="${esc(s.key)}">
+      <div class="card${s.isFocused ? ' focused' : ''}${isClaude ? ' readonly' : ''}"${focusAttr}${cardTitle}>
         <div class="dot ${s.state}"></div>
         <div class="card-main">
           <div class="card-title" title="${esc(s.title)}">${focusTag}${esc(s.title)}</div>
           <div class="card-meta">
+            ${srcChip}
             <span class="state-label ${s.state}">${label}</span>
             ${timeTxt ? `<span>· ${timeTxt}</span>` : ''}
             <span class="ws">· ${esc(s.workspaceName || '—')}${reason}</span>

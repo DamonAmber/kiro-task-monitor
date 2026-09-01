@@ -458,6 +458,33 @@ function applyOpenWindowFilter(sessions, opts = {}) {
   });
 }
 
+// 会话排序比较器（Kiro 与 Claude 合并后统一重排也用它）：
+//   1) 需要处理的（failed/stuck）置顶——工具核心价值，别被埋没；
+//   2) 当前聚焦（激活）的会话靠前；
+//   3) 状态优先级 waiting → running → done → …；
+//   4) 最后按最近活动时间倒序。
+const _STATE_PRIORITY = {
+  [STATE.FAILED]: 0,
+  [STATE.STUCK]: 1,
+  [STATE.WAITING]: 2,
+  [STATE.RUNNING]: 3,
+  [STATE.DONE]: 4,
+  [STATE.CANCELLED]: 5,
+  [STATE.IDLE]: 6,
+};
+function compareSessions(a, b) {
+  const aa = a.state === STATE.FAILED || a.state === STATE.STUCK ? 0 : 1;
+  const ab = b.state === STATE.FAILED || b.state === STATE.STUCK ? 0 : 1;
+  if (aa !== ab) return aa - ab;
+  const fa = a.isFocused ? 0 : 1;
+  const fb = b.isFocused ? 0 : 1;
+  if (fa !== fb) return fa - fb;
+  const pa = _STATE_PRIORITY[a.state] ?? 9;
+  const pb = _STATE_PRIORITY[b.state] ?? 9;
+  if (pa !== pb) return pa - pb;
+  return (b.lastActivityMs || 0) - (a.lastActivityMs || 0);
+}
+
 // ⑤ 扫描缓存：dir → { sMtime, mMtime, mSize, meta, signals }。
 // 文件（session.json / messages.jsonl）的 mtime+size 未变化时，复用已解析的 meta 与信号，
 // 跳过读文件与 JSON 解析（最贵的部分）；只用最新的 now 重跑轻量的 decideState。
@@ -526,6 +553,7 @@ function scanSessions(opts = {}) {
     out.push({
       key: meta.id || d.dir,
       id: meta.id,
+      source: 'kiro',
       title: meta.title,
       agentMode: meta.agentMode,
       workspacePath: meta.workspacePath,
@@ -546,34 +574,7 @@ function scanSessions(opts = {}) {
   // —— 只保留「当前 Kiro 窗口里真正打开/激活的会话」，剔除历史残留 —— //
   out = applyOpenWindowFilter(out, opts);
 
-  // 排序（从上到下）：
-  //   1) 需要处理的（failed/stuck）始终置顶——这是工具的核心价值，别被埋没；
-  //   2) 其次是你当前聚焦（激活）的会话——「把活跃会话往前排」；
-  //   3) 再按状态优先级（waiting → running → done → …）；
-  //   4) 最后按最近活动时间倒序。
-  const priority = {
-    [STATE.FAILED]: 0,
-    [STATE.STUCK]: 1,
-    [STATE.WAITING]: 2,
-    [STATE.RUNNING]: 3,
-    [STATE.DONE]: 4,
-    [STATE.CANCELLED]: 5,
-    [STATE.IDLE]: 6,
-  };
-  const needsAttention = (s) => (s.state === STATE.FAILED || s.state === STATE.STUCK ? 0 : 1);
-  out.sort((a, b) => {
-    const aa = needsAttention(a);
-    const ab = needsAttention(b);
-    if (aa !== ab) return aa - ab;
-    const fa = a.isFocused ? 0 : 1;
-    const fb = b.isFocused ? 0 : 1;
-    if (fa !== fb) return fa - fb;
-    const pa = priority[a.state] ?? 9;
-    const pb = priority[b.state] ?? 9;
-    if (pa !== pb) return pa - pb;
-    return b.lastActivityMs - a.lastActivityMs;
-  });
-
+  out.sort(compareSessions);
   return out;
 }
 
@@ -585,6 +586,7 @@ module.exports = {
   deriveState,
   parseSignals,
   decideState,
+  compareSessions,
   readSessionMeta,
   tailJsonLines,
   listSessionDirs,

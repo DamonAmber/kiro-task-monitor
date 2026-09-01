@@ -17,7 +17,8 @@ const {
 } = require('electron');
 
 const { autoUpdater } = require('electron-updater');
-const { scanSessions, STATE } = require('./src/watcher');
+const { scanSessions, compareSessions, STATE } = require('./src/watcher');
+const { scanClaudeSessions, getClaudePidsAsync } = require('./src/claudeWatcher');
 const { readUsage } = require('./src/usage');
 const { readOpenWindowContextAsync } = require('./src/openWindows');
 const { SESSIONS_DIR } = require('./src/kiroPaths');
@@ -38,6 +39,7 @@ let lastUsage = { ok: false, primary: null, breakdowns: [], timestamp: null };
 // 当前打开的 Kiro 窗口/会话面板上下文（含 kiroRunning）。异步刷新、供 poll 复用，
 // 避免每次轮询都同步 spawn sqlite3（性能）。null 时 scanSessions 降级为不过滤。
 let cachedWinCtx = null;
+let cachedClaudePids = null; // 当前存活的 Claude 会话进程 pid 集（异步刷新；null=未知，不判中断）
 let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时才重绘图标）
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
@@ -222,18 +224,22 @@ function playSound(name = 'Basso') {
 
 function notify({ title, body, session, isFailure }) {
   if (!Notification.isSupported()) return;
+  // Claude 会话无法可靠聚焦终端/重试 → 通知不提供窗口动作，点击仅显示监控浮窗
+  const actionable = !!session && session.source !== 'claude';
   const n = new Notification({
     title,
     body,
     silent: true, // 我们用 afplay 控制声音
-    actions: session ? [{ type: 'button', text: isFailure ? '重试' : '查看' }] : [],
+    actions: actionable ? [{ type: 'button', text: isFailure ? '重试' : '查看' }] : [],
   });
   n.on('click', () => {
-    if (session) retry.focusWorkspaceWindow({ workspacePath: session.workspacePath, workspaceName: session.workspaceName });
+    if (actionable) {
+      retry.focusWorkspaceWindow({ workspacePath: session.workspacePath, workspaceName: session.workspaceName });
+    }
     if (win) win.show();
   });
   n.on('action', () => {
-    if (!session) return;
+    if (!actionable) return;
     if (isFailure) doRetry(session);
     else retry.focusWorkspaceWindow({ workspacePath: session.workspacePath, workspaceName: session.workspaceName });
   });
@@ -272,6 +278,7 @@ function handleTransitions(sessions, now) {
       // ① 确定性中断（Kiro 已不在运行）：不弹通知、不自动重试——用户此时不在 Kiro，
       //    也无从重试；只在浮窗/托盘红点里标记，等用户回来自行处理，避免退出 Kiro 时刷屏。
       if (!s.interrupted) {
+        const canRetry = s.source !== 'claude'; // Claude 会话无法可靠重试
         if (config.get('notifyFailed')) {
           notify({
             title: s.state === STATE.FAILED ? `❌ 任务出错 · ${wsName}` : `⏳ 任务疑似卡住 · ${wsName}`,
@@ -282,7 +289,7 @@ function handleTransitions(sessions, now) {
             isFailure: true,
           });
         }
-        if (config.get('autoRetry')) {
+        if (canRetry && config.get('autoRetry')) {
           doRetry(s);
         }
       }
@@ -372,9 +379,10 @@ function notifyPermission() {
  * ------------------------------------------------------------------ */
 function poll() {
   const now = Date.now();
-  const sessions = scanSessions({
+  const activeWithinMs = (config.get('activeWithinHours') || 24) * 3600 * 1000;
+  const kiro = scanSessions({
     now,
-    activeWithinMs: (config.get('activeWithinHours') || 24) * 3600 * 1000,
+    activeWithinMs,
     stuckMs: (config.get('stuckSeconds') || 240) * 1000,
     toolStuckMs: (config.get('toolStuckSeconds') || 1800) * 1000,
     stuckDetection: config.get('stuckDetection') !== false,
@@ -384,6 +392,18 @@ function poll() {
     windowContext: cachedWinCtx,
     kiroRunning: cachedWinCtx ? cachedWinCtx.kiroRunning : undefined,
   });
+
+  // Claude Code 会话（只读；可在设置里关闭）。与 Kiro 合并后统一排序。
+  let claude = [];
+  if (config.get('watchClaude') !== false) {
+    try {
+      claude = scanClaudeSessions({ now, activeWithinMs, claudePids: cachedClaudePids });
+    } catch (e) {
+      console.error('[claude] scan failed:', e && e.message);
+    }
+  }
+
+  const sessions = [...kiro, ...claude].sort(compareSessions);
   lastSessions = sessions;
   handleTransitions(sessions, now);
   updateTrayTitle(sessions);
@@ -407,6 +427,14 @@ async function refreshWinCtx() {
     cachedWinCtx = await readOpenWindowContextAsync();
   } catch {
     /* 读取失败保留上次值，不致命 */
+  }
+  // 顺带异步刷新 Claude 会话进程存活集（供中断判定/过滤已结束会话）
+  if (config.get('watchClaude') !== false) {
+    try {
+      cachedClaudePids = await getClaudePidsAsync();
+    } catch {
+      /* 保留上次值 */
+    }
   }
 }
 

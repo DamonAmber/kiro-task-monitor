@@ -17,6 +17,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 
 外加一条 💳 **套餐用量**：浮窗底部一条进度条，随时看清 Kiro 套餐额度**剩余 / 已用百分比 / 是否超额 / 重置倒计时**，接近上限变黄、超额变红。
 
+同时还能**只读监控 Claude Code 会话**（运行中 / 完成 / 失败 / 中断），在同一浮窗里用来源色片（<code>Kiro</code> 蓝 / <code>Claude</code> 橙）区分。Claude 会话只做展示、不提供一键重试（终端无法可靠定位与注入）。
+
 解决的痛点：Kiro 任务执行久、经常因各种原因中断需要手动回复「继续」，但你不盯着就不知道它什么时候完成或失败，导致重试不及时、浪费时间。
 
 ---
@@ -48,6 +50,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 - 每个窗口的 `workspaceStorage/<hash>/state.vscdb`（SQLite，用系统 `sqlite3 -readonly` 读取）—— 该窗口侧边栏打开了哪些会话、当前聚焦的是哪个。
 
 据此默认只显示"当前 Kiro 窗口里真正打开着的会话"，并标记每个窗口**聚焦（激活）**的那个会话（浮窗里显示「当前」标签）。若这份窗口状态读不到，则安全回退到"按最近活动时间显示"的旧行为，绝不让监控变空白。详见 `src/openWindows.js`。
+
+**Claude Code 会话（只读）**：另读 Claude Code 的本地数据（全程只读）：`~/.claude/sessions/<pid>.json` 给出每个会话的 `status`（实测 `busy`=运行中 / `idle`=完成待你）、`sessionId`、`cwd`、名称；`pgrep -x claude` 判断进程存活（兼作中断判定与结束会话过滤）；`~/.claude/projects/*/<sessionId>.jsonl` 末行的 `isApiErrorMessage`/`error` 判失败。只做**经实测能判准**的状态：运行中 / 完成 / 失败 / 中断——**不做**一键重试、也不区分「等你授权」（终端 TUI 交互不落盘，判不准就不做）。详见 `src/claudeWatcher.js`。
 
 **及时与性能**：用 `fs.watch` 监听会话目录写入，状态变化**亚秒级**反映（去抖后触发一次扫描），并保留定时轮询兜底。为降开销，未变化的会话按 `mtime`/`size` 跳过重复读取与 JSON 解析（`src/watcher.js` 的扫描缓存）；窗口状态（含 Kiro 进程存活检测）改为**异步、缓存、约 8s 刷新**，不再每轮同步 `spawn sqlite3`。
 
@@ -135,6 +139,7 @@ npm run watch:once   # 只扫描打印一次
 | 卡住阈值·工具执行中（秒） | 有工具在跑（慢查询/长命令/构建/测试）时用的更长宽限 | 1800 |
 | 显示最近（小时） | 二级过滤：在已打开的会话中再按最近 N 小时活跃筛选 | 24 |
 | 底部显示**套餐用量** | 浮窗底部显示 Kiro 套餐额度剩余 / 已用百分比 / 超额 / 重置倒计时 | 开 |
+| 监控 **Claude Code** 会话 | 同时只读监控 Claude Code 会话（运行/完成/失败/中断），来源色片区分 | 开 |
 | 窗口置顶 | 浮窗始终置顶 | 开 |
 
 配置保存在 `~/Library/Application Support/kiro-task-monitor/config.json`。
@@ -159,6 +164,7 @@ src/
   watcher.js         核心：扫描 session.json + tail messages.jsonl → 推导状态
   openWindows.js     只读 Kiro 窗口状态 → 判断哪些会话真正打开/聚焦（过滤残留）
   usage.js           只读 Kiro 全局缓存的套餐用量（额度/已用/超额/重置日）
+  claudeWatcher.js   只读监控 Claude Code 会话（~/.claude sessions + transcript + pgrep）
   trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标（深浅色菜单栏自适应）
   retry.js           一键重试 / 聚焦窗口（kiro CLI 优先，AppleScript 兜底）
   config.js          配置读写

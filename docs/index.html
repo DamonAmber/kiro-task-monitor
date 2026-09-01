@@ -117,6 +117,12 @@
         display: inline-block; font-size: 10px; font-weight: 600; color: var(--blue);
         background: rgba(59, 130, 246, 0.16); border-radius: 5px; padding: 2px 5px; margin-right: 5px;
       }
+      .appshot .as-src {
+        display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .2px;
+        padding: 2px 5px; border-radius: 4px; margin-right: 5px; vertical-align: middle;
+      }
+      .appshot .as-src-kiro { color: #7fb0ff; background: rgba(59, 130, 246, 0.16); }
+      .appshot .as-src-claude { color: #e79a72; background: rgba(217, 119, 87, 0.18); }
       .appshot .as-meta {
         font-size: 11px; color: var(--dim); margin-top: 3px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -217,7 +223,7 @@
               <div class="as-left">
                 <span class="as-logo">◐</span>
                 <span class="as-title">Kiro 任务</span>
-                <span class="as-count">· 5 个 · ❗2 · …1</span>
+                <span class="as-count">共 5 个 · <span style="color:var(--red);font-weight:600">1 待处理</span> · <span style="color:var(--blue);font-weight:600">2 运行中</span></span>
               </div>
               <div class="as-btns"><span>⚙</span><span>—</span></div>
             </div>
@@ -226,38 +232,37 @@
                 <span class="as-dot" style="background: var(--blue)"></span>
                 <div class="as-main">
                   <div class="as-t"><span class="as-tag">当前</span>重构支付回调的幂等处理</div>
-                  <div class="as-meta"><span class="sl" style="color: var(--blue)">运行中</span> · 2分15秒 · payment-service</div>
+                  <div class="as-meta"><span class="as-src as-src-kiro">Kiro</span><span class="sl" style="color: var(--blue)">运行中</span> · 2分15秒 · payment-service</div>
                 </div>
               </div>
               <div class="as-card">
                 <span class="as-dot" style="background: var(--red)"></span>
                 <div class="as-main">
                   <div class="as-t">补充网关限流的单元测试</div>
-                  <div class="as-meta"><span class="sl" style="color: var(--red)">出错</span> · api-gateway · rate limit exceeded</div>
+                  <div class="as-meta"><span class="as-src as-src-kiro">Kiro</span><span class="sl" style="color: var(--red)">出错</span> · api-gateway</div>
                 </div>
                 <span class="as-retry" style="background: var(--red)">重试</span>
+              </div>
+              <div class="as-card">
+                <span class="as-dot" style="background: var(--blue)"></span>
+                <div class="as-main">
+                  <div class="as-t">重构下载队列的并发控制</div>
+                  <div class="as-meta"><span class="as-src as-src-claude">Claude</span><span class="sl" style="color: var(--blue)">运行中</span> · 1分40秒 · file-downloader</div>
+                </div>
               </div>
               <div class="as-card">
                 <span class="as-dot" style="background: var(--green)"></span>
                 <div class="as-main">
                   <div class="as-t">生成本周数据同步报表</div>
-                  <div class="as-meta"><span class="sl" style="color: var(--green)">已完成</span> · 5分03秒 · data-pipeline</div>
+                  <div class="as-meta"><span class="as-src as-src-kiro">Kiro</span><span class="sl" style="color: var(--green)">已完成</span> · 5分03秒 · data-pipeline</div>
                 </div>
               </div>
               <div class="as-card">
-                <span class="as-dot" style="background: var(--amber)"></span>
+                <span class="as-dot" style="background: var(--green)"></span>
                 <div class="as-main">
-                  <div class="as-t">升级依赖并修复类型告警</div>
-                  <div class="as-meta"><span class="sl" style="color: var(--amber)">等待你</span> · auth-service</div>
+                  <div class="as-t">整理发布说明草稿</div>
+                  <div class="as-meta"><span class="as-src as-src-claude">Claude</span><span class="sl" style="color: var(--green)">已完成</span> · 18秒 · release-notes</div>
                 </div>
-              </div>
-              <div class="as-card">
-                <span class="as-dot" style="background: var(--purple)"></span>
-                <div class="as-main">
-                  <div class="as-t">批量重命名组件与全部引用</div>
-                  <div class="as-meta"><span class="sl" style="color: var(--purple)">疑似卡住</span> · 31分12秒 · web-dashboard</div>
-                </div>
-                <span class="as-retry" style="background: var(--purple)">重试</span>
               </div>
             </div>
             <div class="as-usage">
@@ -281,7 +286,8 @@
           <div class="feat"><span class="ic">🟣</span><h3>卡死兜底</h3><p>运行中却长时间无动静，判定疑似卡住并提醒，避免白等。</p></div>
           <div class="feat"><span class="ic">🎯</span><h3>只盯打开的会话</h3><p>跨多个窗口，只显示你当前真正打开着的会话，还标出每个窗口「当前」聚焦的那个，不被旧会话刷屏。</p></div>
           <div class="feat"><span class="ic">💳</span><h3>套餐用量一眼看</h3><p>浮窗底部一条进度条，随时看清套餐额度用了多少、还剩多少、几天后重置；接近上限变黄、超额变红。</p></div>
-          <div class="feat"><span class="ic">🔒</span><h3>只读且安全</h3><p>仅读取本地会话记录推导状态，绝不修改 Kiro 的任何数据。</p></div>
+          <div class="feat"><span class="ic">🧩</span><h3>也监控 Claude Code</h3><p>同一个浮窗里顺带盯住 Claude Code 会话：运行中 / 完成 / 失败 / 中断，用来源色片和 Kiro 一眼区分（只读展示）。</p></div>
+          <div class="feat"><span class="ic">🔒</span><h3>只读且安全</h3><p>仅读取本地会话记录推导状态，绝不修改 Kiro / Claude Code 的任何数据。</p></div>
           <div class="feat"><span class="ic">🔄</span><h3>自动更新</h3><p>已签名公证，自动检查新版；也可在设置里手动检查，下载完一键重启更新。</p></div>
         </div>
       </div>

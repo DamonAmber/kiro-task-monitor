@@ -232,6 +232,30 @@ body {
   text-overflow: ellipsis;
 }
 
+/* 来源色片：Kiro（蓝）/ Claude（橙），紧贴在状态标签前 */
+.src {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-right: 1px;
+}
+.src-kiro {
+  color: #7fb0ff;
+  background: rgba(59, 130, 246, 0.16);
+}
+.src-claude {
+  color: #e79a72;
+  background: rgba(217, 119, 87, 0.18);
+}
+/* Claude 会话只读：不显示可点聚焦的手型 */
+.card.readonly {
+  cursor: default;
+}
+
 /* 聚焦（激活）会话标识 */
 .card.focused {
   background: rgba(59, 130, 246, 0.1);

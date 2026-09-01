@@ -25,6 +25,8 @@ const DEFAULT_CONFIG = {
   showUsage: true, // 底部显示套餐用量（只读 Kiro 缓存的额度/已用/超额）
   usagePollMs: 60000, // 套餐用量刷新间隔（变化慢，单独用更长间隔）
 
+  watchClaude: true, // 同时监控 Claude Code 会话（只读；运行/完成/失败/中断）
+
   bounds: null, // 浮窗位置（记忆）
   alwaysOnTop: true,
 };

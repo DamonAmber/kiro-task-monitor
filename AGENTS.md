@@ -16,6 +16,9 @@ src/
                      判断哪些会话真正打开/聚焦，供 watcher 过滤残留、标注 isFocused
   usage.js           只读 Kiro 全局 state.vscdb 缓存的套餐用量（额度/已用/超额/重置日），
                      主进程每 60s 刷新推给浮窗，底部展示；只读、非实时、读不到即降级不显示
+  claudeWatcher.js   只读监控 Claude Code 会话，产出与 watcher 同形状的会话(source:'claude')。
+                     只做实测能判准的状态：busy→运行中 / idle→完成 / API错误→失败 / 进程消失→中断。
+                     刻意不做重试、不区分「等你授权」（终端 TUI 不落盘）。见下「Claude Code」条。
   trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标(setTemplateImage)；因 build/ 不打包，
                      故在代码里画 PNG。菜单栏标题只显示运行中会话数，详情放 tooltip
   retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底
@@ -64,6 +67,14 @@ electron-builder.yml 打包/签名/公证/发布配置
     窗口上下文改为**异步缓存**：`readOpenWindowContextAsync` 每 ~8s 刷新到 `cachedWinCtx`，`poll` 复用它（不再每轮同步 `spawn sqlite3`）。
   - 中断判定：`isKiroRunningAsync`(pgrep 匹配 `Kiro.app/Contents/MacOS/`) 得 `kiroRunning`。`decideState` 里 `kiroRunning===false` 且判为运行中/卡住 → 置 `interrupted=true` 并锁定 STUCK（不受 `stuckDetection` 开关降级影响）。**必须 fail-safe**：pgrep 缺失/异常时 `kiroRunning=undefined`，绝不判中断（否则会把在跑的会话误标中断）。中断会话不弹通知、不自动重试；UI 显示「已中断」。
   - 休眠：`powerMonitor.on('resume')` 重置 `seeded=false` 重建通知基线，避免对睡眠期间的跳变补发通知。
+- **Claude Code 监控（只读，源自实测验证）**：数据源 `~/.claude/sessions/<pid>.json`（含 `status`：
+  实测 `busy`=生成中、`idle`=完成待你，权威）、`~/.claude/projects/*/<sessionId>.jsonl`（末行
+  `isApiErrorMessage`/`error`=失败）、`pgrep -x claude`（进程存活；兼作 pid 复用防护与「结束会话」过滤）。
+  状态：live+busy→running；live+idle→done（有 API 错误→failed）；进程消失+此前在跑→stuck+interrupted；
+  正常结束后关闭的会话不显示。`main.js` poll 把 Kiro 与 Claude 会话合并后用 `compareSessions` 统一排序，
+  claude pid 集随 `refreshWinCtx`(8s) 异步刷新。**铁律：只加"能判准"的信号**——不做一键重试/聚焦、
+  不臆造「等你授权」态；`status` 的枚举/`sessions` schema 是 Claude Code 未公开内部格式，版本迭代快，改动要容错。
+  UI 用来源色片（`.src-kiro`/`.src-claude`）区分，Claude 卡片只读（无重试、不可点聚焦）；可用 `watchClaude` 关闭。
 
 ## 铁律（容易踩雷）
 1. **只读 `~/.kiro`**：任何情况下都不要写入/修改 Kiro 的会话文件。
