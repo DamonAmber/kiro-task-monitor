@@ -33,8 +33,10 @@ electron-builder.yml 打包/签名/公证/发布配置
   - `turn_start` / `turn_end`（`turn_end.stopReason`：`end_turn`=正常；`error|failed|aborted`=**失败需重试**；`cancelled`=取消）
   - `pending_interaction` / `interaction_resolved`（未解决=**停下等用户**）
   - `tool_call` / `tool_result`（按 `toolCallId` 配对）：有未配对的 = 有**在途工具**在跑，卡住宽限更长
-- 状态优先级与卡死兜底：见 `src/watcher.js` 的 `deriveState`。卡住检测是**上下文感知**的：
-  无在途工具时超 `stuckSeconds`(默认 240s) 判 `stuck`；有工具在执行时用 `toolStuckSeconds`(默认 900s)。
+- **失败/取消是事件驱动的**（`turn_end.stopReason` = `error|failed|aborted|cancelled`），即时可靠、不依赖超时——这是主要告警来源。
+- 状态优先级与卡死兜底：见 `src/watcher.js` 的 `deriveState`。`stuck` 只兜底"静默中断"（进程被杀/休眠/断网，没写 `turn_end`）：
+  上下文感知——无在途工具时超 `stuckSeconds`(默认 240s) 判 `stuck`；有工具在执行时用 `toolStuckSeconds`(默认 1800s=30min)。
+  配置 `stuckDetection` **默认 false**（超时判定整体关闭，长任务永不误报，代价是察觉不到静默中断）；置 true 才启用兜底。
 - 单个超长 turn 的 `turn_start` 可能超出 tail 窗口（默认 512KB）→ 回退用 `session.json.status`，状态仍准，仅耗时未知。
 - **只显示真正打开的会话**：`openWindows.js` 只读 `~/Library/Application Support/Kiro/User/globalStorage/storage.json`
   （当前打开/激活的窗口）与各窗口 `workspaceStorage/<hash>/state.vscdb`（`kiro.kiroAgent.sessionPanels.entries/focused`，

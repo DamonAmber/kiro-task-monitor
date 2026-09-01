@@ -24,7 +24,7 @@ const FAIL_REASONS = new Set(['error', 'failed', 'aborted']);
 // 默认阈值
 const DEFAULTS = {
   stuckMs: 240 * 1000, // 运行中、且无工具在执行时，超 240s 无写入 → 判定 stuck
-  toolStuckMs: 900 * 1000, // 有工具调用在执行（等结果）时用更长的宽限：超 15min 才判 stuck
+  toolStuckMs: 1800 * 1000, // 有工具调用在执行（等结果）时用更长的宽限：超 30min 才判 stuck
   tailBytes: 512 * 1024, // 每个 messages.jsonl 读取末尾字节数（覆盖单个长 turn）
   activeWithinMs: 24 * 60 * 60 * 1000, // 只关心最近 24h 内有活动的会话
 };
@@ -107,6 +107,8 @@ function readSessionMeta(sessionJsonPath) {
 function deriveState(meta, lines, mtimeMs, now, opts) {
   const stuckMs = (opts && opts.stuckMs) || DEFAULTS.stuckMs;
   const toolStuckMs = (opts && opts.toolStuckMs) || DEFAULTS.toolStuckMs;
+  // 卡死超时兜底开关：关掉后完全不按时长判 stuck，只保留失败事件(turn_end)驱动的判定
+  const stuckDetection = !(opts && opts.stuckDetection === false);
 
   let lastTurnStartTs = 0;
   let lastTurnEnd = null; // { ts, stopReason }
@@ -196,14 +198,17 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
   }
   const hasInflightTool = inflightToolTs > 0;
 
+  // 有工具在执行时用更长的卡住宽限（慢查询/长命令/构建/测试属正常），避免误报。
+  // 两条判定路径（turnOpen 与 status 兜底）都用它，防止长 turn 的 turn_start
+  // 滚出 tail 窗口时错误地退回到较短阈值。
+  const effectiveStuckMs = hasInflightTool ? toolStuckMs : stuckMs;
+
   let state;
   let stopReason = lastTurnEnd ? lastTurnEnd.stopReason : '';
   let question = '';
   let elapsedMs = 0;
 
   if (turnOpen) {
-    // 有工具在执行时用更长的卡住宽限（长命令/构建/测试属正常），避免误报
-    const effectiveStuckMs = hasInflightTool ? toolStuckMs : stuckMs;
     if (openPending) {
       state = STATE.WAITING;
       question = openPending.question ? String(openPending.question).slice(0, 140) : '';
@@ -233,7 +238,8 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
         state = STATE.FAILED;
         break;
       case 'in_progress':
-        state = idleFor > stuckMs ? STATE.STUCK : STATE.RUNNING;
+        // 同样按「是否有在途工具」放宽阈值（覆盖 turn_start 滚出 tail 的慢查询场景）
+        state = idleFor > effectiveStuckMs ? STATE.STUCK : STATE.RUNNING;
         break;
       case 'waiting_on_user':
         state = STATE.WAITING;
@@ -246,13 +252,19 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
     }
   }
 
+  // 关闭超时兜底时：把"疑似卡住"降级为"运行中"，只让失败事件来触发告警
+  if (state === STATE.STUCK && !stuckDetection) state = STATE.RUNNING;
+
   return {
     state,
     stopReason,
     question,
     elapsedMs, // running/waiting：本轮已运行时长；done/failed：本轮耗时
     idleMs: idleFor, // 距上次写入时长（用于展示与卡死判断）
-    runningTool: turnOpen && hasInflightTool ? (inflightToolName || 'tool') : '', // 正在执行的工具名
+    runningTool:
+      hasInflightTool && (state === STATE.RUNNING || state === STATE.STUCK)
+        ? inflightToolName || 'tool'
+        : '', // 正在执行的工具名（有在途工具时）
     lastActivityMs,
     turnDurationMs: lastTurnEnd && lastTurnStartTs > 0 && !turnOpen
       ? lastTurnEnd.ts - lastTurnStartTs
@@ -369,6 +381,7 @@ function scanSessions(opts = {}) {
   const activeWithinMs = opts.activeWithinMs ?? DEFAULTS.activeWithinMs;
   const stuckMs = opts.stuckMs ?? DEFAULTS.stuckMs;
   const toolStuckMs = opts.toolStuckMs ?? DEFAULTS.toolStuckMs;
+  const stuckDetection = opts.stuckDetection !== false;
   const tailBytes = opts.tailBytes ?? DEFAULTS.tailBytes;
 
   const dirs = listSessionDirs();
@@ -389,7 +402,11 @@ function scanSessions(opts = {}) {
     if (!meta) continue;
 
     const { lines, mtimeMs } = tailJsonLines(d.messages, tailBytes);
-    const derived = deriveState(meta, lines, Math.max(mtimeMs, msgMtime), now, { stuckMs, toolStuckMs });
+    const derived = deriveState(meta, lines, Math.max(mtimeMs, msgMtime), now, {
+      stuckMs,
+      toolStuckMs,
+      stuckDetection,
+    });
 
     out.push({
       key: meta.id || d.dir,

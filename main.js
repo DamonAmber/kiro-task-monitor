@@ -330,7 +330,8 @@ function poll() {
     now,
     activeWithinMs: (config.get('activeWithinHours') || 24) * 3600 * 1000,
     stuckMs: (config.get('stuckSeconds') || 240) * 1000,
-    toolStuckMs: (config.get('toolStuckSeconds') || 900) * 1000,
+    toolStuckMs: (config.get('toolStuckSeconds') || 1800) * 1000,
+    stuckDetection: config.get('stuckDetection') !== false,
     onlyOpenSessions: config.get('onlyOpenSessions') !== false,
     onlyFocusedSession: !!config.get('onlyFocusedSession'),
   });

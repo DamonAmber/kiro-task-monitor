@@ -47,6 +47,8 @@
           <label class="row"><span>只显示<b>已打开</b>的会话</span><input type="checkbox" data-cfg="onlyOpenSessions" /></label>
           <label class="row"><span>每个窗口只看<b>当前</b>会话</span><input type="checkbox" data-cfg="onlyFocusedSession" /></label>
           <hr />
+          <label class="row"><span>卡死超时兜底</span><input type="checkbox" data-cfg="stuckDetection" /></label>
+          <div class="hint">出错/取消始终靠事件即时识别，与此无关。关掉后长任务不会被误报卡住，但进程崩溃/休眠等「静默中断」将无法察觉。</div>
           <label class="row"><span>卡住阈值·无工具（秒）</span><input type="number" min="60" step="30" data-cfg="stuckSeconds" class="num-in" /></label>
           <label class="row"><span>卡住阈值·工具执行中（秒）</span><input type="number" min="120" step="60" data-cfg="toolStuckSeconds" class="num-in" /></label>
           <label class="row"><span>显示最近（小时）</span><input type="number" min="1" step="1" data-cfg="activeWithinHours" class="num-in" /></label>
