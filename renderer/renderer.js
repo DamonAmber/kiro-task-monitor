@@ -165,12 +165,14 @@ function renderUpdate(state) {
   const statusEl = document.getElementById('update-status');
   const installBtn = document.getElementById('btn-install-update');
   const checkBtn = document.getElementById('btn-check-update');
+  const moveBtn = document.getElementById('btn-move-app');
   const verEl = document.getElementById('version');
   if (verEl && state.current) verEl.textContent = `Kiro 任务监控 v${state.current}`;
 
   statusEl.classList.remove('ok', 'err');
   let text = '';
   let showInstall = false;
+  let showMove = false;
   let checking = false;
   switch (state.status) {
     case 'checking':
@@ -193,7 +195,13 @@ function renderUpdate(state) {
       statusEl.classList.add('ok');
       break;
     case 'error':
-      text = `检查失败：${state.error || '未知错误'}`;
+      if (state.readOnly) {
+        // 只读卷 / 路径随机化：给可操作的中文提示，而不是原始英文报错
+        text = '无法自动更新：App 当前从只读位置运行（DMG 或「下载」目录）。请移动到「应用程序」后重试。';
+        showMove = true;
+      } else {
+        text = `检查失败：${state.error || '未知错误'}`;
+      }
       statusEl.classList.add('err');
       break;
     case 'dev':
@@ -204,6 +212,7 @@ function renderUpdate(state) {
   }
   statusEl.textContent = text;
   installBtn.classList.toggle('hidden', !showInstall);
+  if (moveBtn) moveBtn.classList.toggle('hidden', !showMove);
   checkBtn.disabled = checking;
   checkBtn.textContent = checking ? '检查中…' : '检查更新';
 }
@@ -218,6 +227,18 @@ document.getElementById('btn-install-update').addEventListener('click', () => {
   document.getElementById('update-status').textContent = '正在重启并安装…';
   window.api.installUpdate();
 });
+const btnMoveApp = document.getElementById('btn-move-app');
+if (btnMoveApp) {
+  btnMoveApp.addEventListener('click', async () => {
+    document.getElementById('update-status').textContent = '正在移动到「应用程序」…';
+    const r = await window.api.moveToApplications();
+    // 成功会自动重启；失败则提示手动移动
+    if (!r || !r.ok) {
+      document.getElementById('update-status').textContent =
+        '移动失败，请手动把 App 拖到「应用程序」文件夹后重新打开。';
+    }
+  });
+}
 window.api.onUpdateState((state) => renderUpdate(state));
 
 /* ---------- 套餐用量 ---------- */

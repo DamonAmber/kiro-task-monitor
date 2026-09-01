@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   // 更新：手动检查 / 一键重启安装 / 读取状态 / 订阅状态推送
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  moveToApplications: () => ipcRenderer.invoke('app:moveToApplications'),
   getUpdateState: () => ipcRenderer.invoke('update:state'),
   onUpdateState: (cb) => {
     const handler = (_e, state) => cb(state);

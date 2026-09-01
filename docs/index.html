@@ -370,6 +370,10 @@
         <p class="section-sub">下载按钮始终指向最新版；升级后自动生效</p>
         <div class="changelog">
           <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.7.1</span></div>
+            <div class="cl-body">修复更新问题：从只读位置（磁盘映像 / 下载目录）运行时会引导把 App 移动到「应用程序」，以便正常自动更新。</div>
+          </div>
+          <div class="cl-item">
             <div class="cl-ver"><span class="tag">v0.7.0</span></div>
             <div class="cl-body"><span class="cl-new">新增</span><b>极简模式</b>：单行紧凑视图，隐藏次要信息，窗口可缩到很小；普通 / 极简两种尺寸各自记忆。设置或菜单栏右键即可切换。</div>
           </div>
@@ -404,9 +408,10 @@
         <p class="section-sub">全程无需命令行</p>
         <div class="steps">
           <div class="step"><div class="n">1</div><h3>下载</h3><p>点上方按钮下载最新的 <code>.dmg</code>（universal，通用于 Apple Silicon 与 Intel）。</p></div>
-          <div class="step"><div class="n">2</div><h3>安装</h3><p>双击 dmg，把「Kiro 任务监控」拖进「应用程序」。</p></div>
-          <div class="step"><div class="n">3</div><h3>运行</h3><p>启动后浮窗停在桌面右上角，菜单栏出现 <code>K</code> 图标。已公证，双击直开。</p></div>
+          <div class="step"><div class="n">2</div><h3>安装</h3><p>双击 dmg，把「Kiro 任务监控」拖进「应用程序」——务必<b>从「应用程序」里打开</b>，直接在 dmg / 下载目录里运行会无法自动更新。</p></div>
+          <div class="step"><div class="n">3</div><h3>运行</h3><p>启动后浮窗停在桌面右上角，菜单栏出现 <code>◐</code> 图标。已公证，双击直开。</p></div>
         </div>
+        <div class="note" style="max-width:760px;margin:22px auto 0;">🔄 如果没从「应用程序」打开，App 会在启动时提示你一键移动过去——移动后即可正常自动升级，只需一次。</div>
         <div style="text-align:center; margin-top:36px;">
           <a class="btn btn-primary" id="downloadBtn2"
              href="https://github.com/DamonAmber/kiro-task-monitor/releases/latest">⬇ 下载 macOS 版</a>

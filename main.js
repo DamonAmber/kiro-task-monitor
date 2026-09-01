@@ -12,6 +12,7 @@ const {
   ipcMain,
   screen,
   shell,
+  dialog,
   powerMonitor,
   nativeTheme,
 } = require('electron');
@@ -44,7 +45,14 @@ let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
-let updateState = { status: 'idle', current: '', latest: '', progress: 0, error: '' };
+let updateState = { status: 'idle', current: '', latest: '', progress: 0, error: '', readOnly: false };
+
+// 识别「App 跑在只读卷 / 被 macOS 路径随机化(App Translocation)」导致无法自更新的错误
+function isReadOnlyVolumeError(msg) {
+  return /read-only|read only|readonly|AppTranslocation|move the application|Downloads directory/i.test(
+    String(msg || '')
+  );
+}
 
 function pushUpdateState(patch) {
   updateState = { ...updateState, ...patch };
@@ -565,8 +573,9 @@ function setupAutoUpdate() {
     pushUpdateState({ status: 'downloading', progress: Math.round((p && p.percent) || 0) })
   );
   autoUpdater.on('error', (e) => {
-    console.error('[update] error:', e && e.message);
-    pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
+    const msg = (e && e.message) || String(e);
+    console.error('[update] error:', msg);
+    pushUpdateState({ status: 'error', error: msg, readOnly: isReadOnlyVolumeError(msg) });
   });
   autoUpdater.on('update-downloaded', (i) => {
     pushUpdateState({ status: 'downloaded', latest: (i && i.version) || '' });
@@ -583,7 +592,8 @@ function setupAutoUpdate() {
   });
 
   const check = () => autoUpdater.checkForUpdates().catch((e) => {
-    pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
+    const msg = (e && e.message) || String(e);
+    pushUpdateState({ status: 'error', error: msg, readOnly: isReadOnlyVolumeError(msg) });
   });
   check();
   setInterval(check, 6 * 60 * 60 * 1000); // 每 6 小时检查一次
@@ -628,8 +638,9 @@ function registerIpc() {
       const r = await autoUpdater.checkForUpdates();
       return { ok: true, version: r && r.updateInfo && r.updateInfo.version };
     } catch (e) {
-      pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
-      return { ok: false, error: (e && e.message) || String(e) };
+      const msg = (e && e.message) || String(e);
+      pushUpdateState({ status: 'error', error: msg, readOnly: isReadOnlyVolumeError(msg) });
+      return { ok: false, error: msg };
     }
   });
   ipcMain.handle('update:install', () => {
@@ -637,6 +648,58 @@ function registerIpc() {
     restartToUpdate();
     return { ok: true };
   });
+  // 只读卷/路径随机化时，一键把 App 移到「应用程序」（成功会自动重启到新位置）
+  ipcMain.handle('app:moveToApplications', () => moveToApplications());
+}
+
+/* ------------------------------------------------------------------ *
+ * 只读卷 / App Translocation 处理：引导移动到「应用程序」文件夹
+ * ------------------------------------------------------------------ */
+/** 把 App 移动到「应用程序」文件夹（成功后 Electron 自动重启到新位置）。 */
+function moveToApplications() {
+  if (process.platform !== 'darwin') return { ok: false, error: 'not-macos' };
+  try {
+    const ok = app.moveToApplicationsFolder();
+    return { ok };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+}
+
+/**
+ * 启动时若发现 App 不在「应用程序」文件夹（多为从 DMG / 下载目录运行、或被 macOS
+ * 路径随机化到只读位置），引导用户一键移动——否则 Squirrel 无法在只读卷上自更新。
+ */
+async function ensureInApplications() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return;
+  let inApps = true;
+  try {
+    inApps = app.isInApplicationsFolder();
+  } catch {
+    return; // 判断失败就不打扰
+  }
+  if (inApps) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['移动到「应用程序」', '以后再说'],
+    defaultId: 0,
+    cancelId: 1,
+    message: '建议把「Kiro 任务监控」移动到「应用程序」文件夹',
+    detail:
+      '它现在从只读位置运行（磁盘映像 DMG 或「下载」目录），macOS 会因此阻止自动更新。\n' +
+      '移动到「应用程序」后即可正常自动升级，只需这一次。',
+  });
+  if (response !== 0) return;
+  const r = moveToApplications();
+  if (!r.ok) {
+    await dialog.showMessageBox({
+      type: 'error',
+      message: '移动失败',
+      detail:
+        '请手动把「Kiro 任务监控」拖到「应用程序」文件夹后重新打开。\n' + (r.error || ''),
+    });
+  }
+  // 成功时 moveToApplicationsFolder 已触发重启，无需其它处理
 }
 
 /* ------------------------------------------------------------------ *
@@ -645,6 +708,9 @@ function registerIpc() {
 app.whenReady().then(async () => {
   config = new Config(path.join(app.getPath('userData'), 'config.json'));
   if (app.dock) app.dock.hide(); // 菜单栏应用风格，不占 Dock
+
+  // 若在只读位置运行，先引导移动到「应用程序」（用户同意则会自动重启，后续代码不再执行）
+  await ensureInApplications();
 
   registerIpc();
   createWindow();
