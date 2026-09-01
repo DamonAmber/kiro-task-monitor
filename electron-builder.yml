@@ -50,3 +50,5 @@ publish:
   provider: github
   owner: DamonAmber
   repo: kiro-task-monitor
+  # 直接发布为正式 release（默认是 draft，草稿不会被 electron-updater 当作可更新版本）
+  releaseType: release

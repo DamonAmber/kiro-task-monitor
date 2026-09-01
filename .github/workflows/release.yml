@@ -1,0 +1,44 @@
+name: Release
+
+# 推送形如 v1.2.3 的 tag 时触发；也可在 Actions 页手动触发。
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # 允许内置 GITHUB_TOKEN 创建 Release 并上传产物
+
+jobs:
+  release:
+    runs-on: macos-14 # Apple Silicon runner，构建 universal 包
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 生成图标
+        run: npm run icon
+
+      - name: 打包 · 签名 · 公证 · 发布
+        env:
+          # 代码签名证书（base64 的 .p12 与其密码）
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # 公证凭据
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # electron-builder 用它把产物发布到本仓库 Releases（无需额外 PAT）
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --publish always
