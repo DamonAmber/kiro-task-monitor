@@ -72,32 +72,44 @@ function focusViaCli(workspacePath) {
 }
 
 /**
- * AppleScript 兜底：把标题包含 workspaceName 的 Kiro 窗口置前。
- * 注意：对处于原生全屏（独立 Space）的窗口，AXRaise 常常无法切换过去。
+ * 激活 Kiro 并把标题含 workspaceName 的窗口置前——**能跨 Space / 全屏**。
+ *
+ * 原理（见实践验证）：`activate` 会自动切到该 app「当前活动窗口」所在的 Space
+ * （包括全屏窗口的独立 Space），但切换要 ~0.4–0.5s，期间 System Events 看不到
+ * 目标窗口、AXRaise 会"丢失"。所以：activate → 若当前 Space 看不到目标窗口就等
+ * 切换完成 → 再 AXRaise。前提是目标窗口已是 Kiro 的活动窗口（由 `kiro <路径>`
+ * 先行保证），这样 activate 才会切到正确的（可能是全屏的）Space。
  */
-function raiseWindowScript(workspaceName) {
+function focusScript(workspaceName) {
   const name = esc(workspaceName);
   return `
+tell application id "${KIRO_BUNDLE_ID}" to activate
+delay 0.2
 tell application "System Events"
-  if not (exists process "Kiro") then
-    return "no-process"
-  end if
+  if not (exists process "Kiro") then return "no-process"
   set kiro to first process whose bundle identifier is "${KIRO_BUNDLE_ID}"
   set frontmost of kiro to true
-  set matched to false
-  if "${name}" is not "" then
+  set nm to "${name}"
+  if nm is not "" then
+    set canSee to false
     repeat with w in windows of kiro
       try
-        if name of w contains "${name}" then
+        if name of w contains nm then set canSee to true
+      end try
+    end repeat
+    -- 目标窗口不在当前 Space（多为全屏/其它桌面）→ 等系统完成 Space 切换
+    if not canSee then delay 0.55
+    repeat with w in windows of kiro
+      try
+        if name of w contains nm then
           perform action "AXRaise" of w
-          set matched to true
           exit repeat
         end if
       end try
     end repeat
   end if
-  return (matched as string)
-end tell`;
+end tell
+return "done"`;
 }
 
 /** 归一化入参：既支持传对象，也兼容旧的仅传 workspaceName 字符串。 */
@@ -111,17 +123,18 @@ function normArgs(arg) {
 
 /**
  * 聚焦某会话对应的 Kiro 窗口（点击列表项 / 通知「查看」时用）。
- * 优先走 CLI（全屏可靠），失败再退回 AppleScript。
+ * 分两步以可靠跨 Space / 全屏：
+ *   1) `kiro <路径>` 让目标窗口成为 Kiro 的「活动窗口」（即便它在别的 Space / 全屏）；
+ *   2) AppleScript activate → 切到该活动窗口所在 Space（含全屏）→ 等切换完成 → AXRaise。
+ * 缺了第 2 步时,单靠 CLI 往往只在内部聚焦、不触发系统级 Space 切换（全屏调不出来）。
  * @param {{workspacePath?:string, workspaceName?:string}|string} arg
  */
 async function focusWorkspaceWindow(arg) {
   const { workspacePath, workspaceName } = normArgs(arg);
-  const viaCli = await focusViaCli(workspacePath);
-  if (viaCli.ok) return viaCli;
-  return runOsascript(`
-tell application id "${KIRO_BUNDLE_ID}" to activate
-delay 0.15
-${raiseWindowScript(workspaceName)}`);
+  const viaCli = await focusViaCli(workspacePath); // 第 1 步：选中目标窗口（不阻塞后续）
+  const viaAS = await runOsascript(focusScript(workspaceName)); // 第 2 步：切 Space + 置前
+  if (viaAS.ok || viaCli.ok) return { ok: true, via: viaCli.ok ? 'cli+as' : 'as' };
+  return viaAS; // 冒泡权限等错误
 }
 
 /**
