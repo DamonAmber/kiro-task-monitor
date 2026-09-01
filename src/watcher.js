@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { SESSIONS_DIR } = require('./kiroPaths');
+const { readOpenWindowContext, normFolder } = require('./openWindows');
 
 /* ------------------------------------------------------------------ *
  * 状态常量
@@ -271,8 +272,68 @@ function listSessionDirs() {
 }
 
 /**
+ * 依据「当前打开的 Kiro 窗口 + 每窗口聚焦会话」为会话打标并过滤。
+ *
+ * 每个会话会被标注：
+ *   - windowOpen    该会话所属工作区当前是否有打开的 Kiro 窗口
+ *   - isActiveWindow 该工作区是否为最近激活（前台）的窗口
+ *   - isFocused     该会话是否为其窗口当前聚焦（激活）的那个会话
+ *
+ * 过滤规则（onlyOpenSessions 默认开启）：
+ *   - 无法获取窗口状态（ctx.ok=false）→ 不过滤，回退到旧行为，避免监控变空白；
+ *   - 工作区没有打开的窗口 → 剔除（这是历史残留会话的主要来源）；
+ *   - 窗口开着但面板信息读不到（readable=false）→ 保守保留，避免漏报；
+ *   - onlyFocusedSession=true → 每个窗口只保留聚焦的那个会话；
+ *   - 否则保留该窗口侧边栏里打开的所有会话。
+ *
+ * @param {Array} sessions 待处理会话
+ * @param {object} opts { onlyOpenSessions, onlyFocusedSession, windowContext }
+ * @returns {Array} 过滤后的会话（已就地打标）
+ */
+function applyOpenWindowFilter(sessions, opts = {}) {
+  const onlyOpen = opts.onlyOpenSessions !== false; // 默认开启
+  const onlyFocused = !!opts.onlyFocusedSession;
+
+  let ctx = opts.windowContext;
+  if (ctx === undefined) {
+    // 只在需要时读取（也允许调用方注入，便于测试）
+    try {
+      ctx = readOpenWindowContext();
+    } catch {
+      ctx = null;
+    }
+  }
+
+  // 打标（即使不过滤也提供信息，便于 UI 高亮聚焦会话）
+  for (const s of sessions) {
+    const f = normFolder(s.workspacePath);
+    if (ctx && ctx.ok) {
+      s.windowOpen = ctx.openFolders.has(f);
+      s.isActiveWindow = !!f && f === ctx.activeFolder;
+      const panels = ctx.panelsByFolder.get(f);
+      s.isFocused = !!(panels && panels.readable && s.id && s.id === panels.focused);
+    } else {
+      s.windowOpen = undefined;
+      s.isActiveWindow = undefined;
+      s.isFocused = false;
+    }
+  }
+
+  if (!onlyOpen || !ctx || !ctx.ok) return sessions; // 降级：不过滤
+
+  return sessions.filter((s) => {
+    const f = normFolder(s.workspacePath);
+    if (!ctx.openFolders.has(f)) return false; // 工作区窗口未打开 → 残留会话
+    const panels = ctx.panelsByFolder.get(f);
+    if (!panels || !panels.readable) return true; // 窗口开着但面板未知 → 保守保留
+    if (onlyFocused) return !!s.id && s.id === panels.focused;
+    return !!s.id && panels.ids.has(s.id);
+  });
+}
+
+/**
  * 扫描并返回每个（最近活跃的）会话的状态快照。
- * @param {object} opts { activeWithinMs, stuckMs, tailBytes, now }
+ * @param {object} opts { activeWithinMs, stuckMs, tailBytes, now, onlyOpenSessions, onlyFocusedSession, windowContext }
  * @returns {Array<Session>} 按最近活动时间倒序
  */
 function scanSessions(opts = {}) {
@@ -282,7 +343,7 @@ function scanSessions(opts = {}) {
   const tailBytes = opts.tailBytes ?? DEFAULTS.tailBytes;
 
   const dirs = listSessionDirs();
-  const out = [];
+  let out = [];
 
   for (const d of dirs) {
     // 先用 messages.jsonl 或 session.json 的 mtime 做粗过滤
@@ -316,6 +377,9 @@ function scanSessions(opts = {}) {
     });
   }
 
+  // —— 只保留「当前 Kiro 窗口里真正打开/激活的会话」，剔除历史残留 —— //
+  out = applyOpenWindowFilter(out, opts);
+
   // 排序：需要关注的（failed/stuck/waiting）优先，然后按最近活动倒序
   const priority = {
     [STATE.FAILED]: 0,
@@ -345,4 +409,5 @@ module.exports = {
   readSessionMeta,
   tailJsonLines,
   listSessionDirs,
+  applyOpenWindowFilter,
 };

@@ -329,6 +329,8 @@ function poll() {
     now,
     activeWithinMs: (config.get('activeWithinHours') || 24) * 3600 * 1000,
     stuckMs: (config.get('stuckSeconds') || 120) * 1000,
+    onlyOpenSessions: config.get('onlyOpenSessions') !== false,
+    onlyFocusedSession: !!config.get('onlyFocusedSession'),
   });
   lastSessions = sessions;
   handleTransitions(sessions, now);

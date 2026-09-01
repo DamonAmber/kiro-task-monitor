@@ -65,11 +65,12 @@ function render(sessions) {
       const btn = isFail
         ? `<button class="retry-btn ${s.state === 'stuck' ? 'stuck' : ''}" data-retry="${esc(s.key)}">重试</button>`
         : '';
+      const focusTag = s.isFocused ? '<span class="focus-tag" title="该窗口当前聚焦的会话">当前</span>' : '';
       return `
-      <div class="card" data-focus="${esc(s.key)}">
+      <div class="card${s.isFocused ? ' focused' : ''}" data-focus="${esc(s.key)}">
         <div class="dot ${s.state}"></div>
         <div class="card-main">
-          <div class="card-title" title="${esc(s.title)}">${esc(s.title)}</div>
+          <div class="card-title" title="${esc(s.title)}">${focusTag}${esc(s.title)}</div>
           <div class="card-meta">
             <span class="state-label ${s.state}">${label}</span>
             ${timeTxt ? `<span>· ${timeTxt}</span>` : ''}

@@ -5,7 +5,9 @@ const path = require('path');
 
 const DEFAULT_CONFIG = {
   pollMs: 2000, // 轮询间隔
-  activeWithinHours: 24, // 只显示最近 N 小时活跃的会话
+  activeWithinHours: 24, // 只显示最近 N 小时活跃的会话（作为二级过滤）
+  onlyOpenSessions: true, // 只显示当前 Kiro 窗口里真正打开着的会话（剔除历史残留）
+  onlyFocusedSession: false, // 每个窗口只显示当前聚焦（激活）的那个会话
   stuckSeconds: 120, // 运行中但 N 秒无写入 → 判定卡住
   notifyMinTurnSeconds: 25, // 完成通知的最短耗时门槛（过滤秒回的短轮次）
 
