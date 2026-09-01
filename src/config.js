@@ -27,7 +27,10 @@ const DEFAULT_CONFIG = {
 
   watchClaude: true, // 同时监控 Claude Code 会话（只读；运行/完成/失败/中断）
 
-  bounds: null, // 浮窗位置（记忆）
+  compactMode: false, // 极简模式：单行紧凑卡片、隐藏次要信息、窗口可缩到很小
+
+  bounds: null, // 普通模式浮窗位置/尺寸（记忆）
+  compactBounds: null, // 极简模式浮窗位置/尺寸（各自记忆，互不干扰）
   alwaysOnTop: true,
 };
 

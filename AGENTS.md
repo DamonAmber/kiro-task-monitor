@@ -67,6 +67,11 @@ electron-builder.yml 打包/签名/公证/发布配置
     窗口上下文改为**异步缓存**：`readOpenWindowContextAsync` 每 ~8s 刷新到 `cachedWinCtx`，`poll` 复用它（不再每轮同步 `spawn sqlite3`）。
   - 中断判定：`isKiroRunningAsync`(pgrep 匹配 `Kiro.app/Contents/MacOS/`) 得 `kiroRunning`。`decideState` 里 `kiroRunning===false` 且判为运行中/卡住 → 置 `interrupted=true` 并锁定 STUCK（不受 `stuckDetection` 开关降级影响）。**必须 fail-safe**：pgrep 缺失/异常时 `kiroRunning=undefined`，绝不判中断（否则会把在跑的会话误标中断）。中断会话不弹通知、不自动重试；UI 显示「已中断」。
   - 休眠：`powerMonitor.on('resume')` 重置 `seeded=false` 重建通知基线，避免对睡眠期间的跳变补发通知。
+- **极简模式（compactMode）**：config `compactMode`(默认关) + `compactBounds`。普通/极简两种尺寸与位置**各自记忆**
+  （`persistBounds` 按当前 `compactMode` 存到 `bounds`/`compactBounds`）。`main.js` 有 `NORMAL_SIZE`/`COMPACT_SIZE`
+  常量与 `applyCompactMode()`：切换时调整窗口最小尺寸并套用该模式记忆的 bounds；`config:set` 收到 `compactMode` 变更即调用。
+  托盘右键菜单也能切（切后 `poll()` 立即把 config 推给渲染层）。渲染层给 `#app` 加/去 `.compact` 类，样式全在
+  `styles.css` 的 `#app.compact ...`（单行、隐藏 `.card-meta`/`.title`/`.src`、来源改用 `data-source` 左边框、显示 `.card-mini-time`、隐藏用量条）。
 - **Claude Code 监控（只读，源自实测验证）**：数据源 `~/.claude/sessions/<pid>.json`（含 `status`：
   实测 `busy`=生成中、`idle`=完成待你，权威）、`~/.claude/projects/*/<sessionId>.jsonl`（末行
   `isApiErrorMessage`/`error`=失败）、`pgrep -x claude`（进程存活；兼作 pid 复用防护与「结束会话」过滤）。

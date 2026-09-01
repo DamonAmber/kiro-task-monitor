@@ -232,6 +232,16 @@ body {
   text-overflow: ellipsis;
 }
 
+/* 紧凑耗时（仅极简模式显示，右对齐） */
+.card-mini-time {
+  display: none;
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 /* 来源色片：Kiro（蓝）/ Claude（橙），紧贴在状态标签前 */
 .src {
   flex: 0 0 auto;
@@ -302,6 +312,48 @@ body {
 .retry-btn.busy {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* ---------- 极简模式：单行紧凑、隐藏次要信息、窗口可缩到很小 ---------- */
+#app.compact .title {
+  display: none; /* 省宽度，只留 ◐ logo */
+}
+#app.compact .list {
+  padding: 4px;
+}
+#app.compact .card {
+  padding: 5px 8px 5px 6px;
+  gap: 8px;
+  margin-bottom: 3px;
+  border-radius: 8px;
+  align-items: center;
+  border-left: 2px solid transparent; /* 来源色条 */
+}
+#app.compact .card[data-source='kiro'] {
+  border-left-color: rgba(59, 130, 246, 0.6);
+}
+#app.compact .card[data-source='claude'] {
+  border-left-color: rgba(217, 119, 87, 0.7);
+}
+#app.compact .dot {
+  margin-top: 0;
+}
+#app.compact .card-meta,
+#app.compact .focus-tag {
+  display: none; /* 隐藏第二行明细与「当前」标（状态靠圆点颜色表达） */
+}
+#app.compact .card-title {
+  font-size: 12px;
+}
+#app.compact .card-mini-time {
+  display: block; /* 右侧显示紧凑耗时 */
+}
+#app.compact .retry-btn {
+  padding: 3px 8px;
+  font-size: 10.5px;
+}
+#app.compact .usage {
+  display: none; /* 极简模式隐藏用量条 */
 }
 
 /* ---------- 套餐用量（底部条） ---------- */

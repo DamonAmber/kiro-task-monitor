@@ -69,21 +69,25 @@ const STATE_LABEL = {
 /* ------------------------------------------------------------------ *
  * 浮窗
  * ------------------------------------------------------------------ */
+// 各模式的默认尺寸与最小尺寸（极简模式可缩到很小）
+const NORMAL_SIZE = { w: 340, h: 460, minW: 300, minH: 220 };
+const COMPACT_SIZE = { w: 232, h: 300, minW: 180, minH: 96 };
+
 function createWindow() {
-  const WIDTH = 340;
-  const HEIGHT = 460;
-  let bounds = config.get('bounds');
+  const compact = !!config.get('compactMode');
+  const sz = compact ? COMPACT_SIZE : NORMAL_SIZE;
+  let bounds = config.get(compact ? 'compactBounds' : 'bounds');
   if (!bounds) {
     const area = screen.getPrimaryDisplay().workArea;
-    bounds = { x: area.x + area.width - WIDTH - 16, y: area.y + 16, width: WIDTH, height: HEIGHT };
+    bounds = { x: area.x + area.width - sz.w - 16, y: area.y + 16, width: sz.w, height: sz.h };
   }
 
   win = new BrowserWindow({
     ...bounds,
-    width: WIDTH,
-    height: HEIGHT,
-    minWidth: 300,
-    minHeight: 220,
+    width: bounds.width || sz.w,
+    height: bounds.height || sz.h,
+    minWidth: sz.minW,
+    minHeight: sz.minH,
     frame: false,
     transparent: true,
     hasShadow: true,
@@ -127,11 +131,27 @@ function createWindow() {
   });
 
   const persistBounds = () => {
-    if (win && !win.isDestroyed()) config.set({ bounds: win.getBounds() });
+    if (win && !win.isDestroyed()) {
+      // 各模式的尺寸/位置分别记忆，互不覆盖
+      config.set({ [config.get('compactMode') ? 'compactBounds' : 'bounds']: win.getBounds() });
+    }
   };
   win.on('moved', persistBounds);
   win.on('resized', persistBounds);
   win.on('close', persistBounds);
+}
+
+/** 切换极简/普通模式：调整最小尺寸并套用该模式记忆的尺寸（无记忆则用默认，保持当前位置）。 */
+function applyCompactMode(compact) {
+  if (!win || win.isDestroyed()) return;
+  const sz = compact ? COMPACT_SIZE : NORMAL_SIZE;
+  win.setMinimumSize(sz.minW, sz.minH);
+  let b = config.get(compact ? 'compactBounds' : 'bounds');
+  if (!b) {
+    const cur = win.getBounds();
+    b = { x: cur.x, y: cur.y, width: sz.w, height: sz.h };
+  }
+  win.setBounds(b);
 }
 
 function toggleWindow() {
@@ -157,6 +177,16 @@ function createTray() {
 function showTrayMenu() {
   const menu = Menu.buildFromTemplate([
     { label: '显示/隐藏浮窗', click: toggleWindow },
+    {
+      label: '极简模式',
+      type: 'checkbox',
+      checked: !!config.get('compactMode'),
+      click: (mi) => {
+        config.set({ compactMode: mi.checked });
+        applyCompactMode(mi.checked);
+        poll(); // 立即把最新 config 推给渲染层，切换紧凑布局
+      },
+    },
     { type: 'separator' },
     {
       label: '出错时自动重试',
@@ -571,6 +601,7 @@ function registerIpc() {
     if (patch && 'pollMs' in patch) startPolling();
     if (patch && 'usagePollMs' in patch) startUsagePolling();
     if (patch && 'alwaysOnTop' in patch && win) win.setAlwaysOnTop(!!patch.alwaysOnTop, 'floating');
+    if (patch && 'compactMode' in patch) applyCompactMode(!!patch.compactMode);
     return data;
   });
   ipcMain.handle('session:retry', async (_e, payload) => {

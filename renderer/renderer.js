@@ -1,9 +1,15 @@
 'use strict';
 
+const appEl = document.getElementById('app');
 const listEl = document.getElementById('list');
 const emptyEl = document.getElementById('empty');
 const countsEl = document.getElementById('counts');
 const settingsEl = document.getElementById('settings');
+
+let compact = false;
+function applyCompact() {
+  if (appEl) appEl.classList.toggle('compact', compact);
+}
 
 const STATE_LABEL = {
   running: '运行中',
@@ -81,7 +87,7 @@ function render(sessions) {
       const focusAttr = isClaude ? '' : ` data-focus="${esc(s.key)}"`;
       const cardTitle = isClaude ? ' title="Claude Code 会话（只读）"' : '';
       return `
-      <div class="card${s.isFocused ? ' focused' : ''}${isClaude ? ' readonly' : ''}"${focusAttr}${cardTitle}>
+      <div class="card${s.isFocused ? ' focused' : ''}${isClaude ? ' readonly' : ''}" data-source="${isClaude ? 'claude' : 'kiro'}"${focusAttr}${cardTitle}>
         <div class="dot ${s.state}"></div>
         <div class="card-main">
           <div class="card-title" title="${esc(s.title)}">${focusTag}${esc(s.title)}</div>
@@ -92,6 +98,7 @@ function render(sessions) {
             <span class="ws">· ${esc(s.workspaceName || '—')}${reason}</span>
           </div>
         </div>
+        ${timeTxt ? `<span class="card-mini-time">${timeTxt}</span>` : ''}
         ${btn}
       </div>`;
     })
@@ -311,6 +318,12 @@ window.api.onUsage((usage) => {
 window.api.onSessions(({ sessions, config, usage }) => {
   render(sessions || []);
   if (config && 'showUsage' in config) showUsage = !!config.showUsage;
+  if (config && 'compactMode' in config) {
+    compact = !!config.compactMode;
+    applyCompact();
+    const cb = document.querySelector('[data-cfg="compactMode"]');
+    if (cb) cb.checked = compact; // 托盘切换后同步设置里的勾选态
+  }
   if (usage) lastUsage = usage;
   renderUsage();
 });
@@ -318,6 +331,8 @@ window.api.onSessions(({ sessions, config, usage }) => {
 (async () => {
   const cfg = await window.api.getConfig();
   showUsage = cfg.showUsage !== false;
+  compact = !!cfg.compactMode;
+  applyCompact();
   bindSettings(cfg);
   // 「显示套餐用量」开关即时生效，不必等下一轮推送
   const usageToggle = document.querySelector('[data-cfg="showUsage"]');
@@ -325,6 +340,14 @@ window.api.onSessions(({ sessions, config, usage }) => {
     usageToggle.addEventListener('change', () => {
       showUsage = usageToggle.checked;
       renderUsage();
+    });
+  }
+  // 「极简模式」开关即时切换布局（窗口尺寸由主进程调整）
+  const compactToggle = document.querySelector('[data-cfg="compactMode"]');
+  if (compactToggle) {
+    compactToggle.addEventListener('change', () => {
+      compact = compactToggle.checked;
+      applyCompact();
     });
   }
   const { sessions, usage } = await window.api.getSessions();
