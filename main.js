@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const { execFile } = require('child_process');
 const {
   app,
@@ -11,11 +12,15 @@ const {
   ipcMain,
   screen,
   shell,
+  powerMonitor,
+  nativeTheme,
 } = require('electron');
 
 const { autoUpdater } = require('electron-updater');
 const { scanSessions, STATE } = require('./src/watcher');
 const { readUsage } = require('./src/usage');
+const { readOpenWindowContextAsync } = require('./src/openWindows');
+const { SESSIONS_DIR } = require('./src/kiroPaths');
 const { makeTrayIcon } = require('./src/trayIcon');
 const retry = require('./src/retry');
 const { Config } = require('./src/config');
@@ -25,8 +30,15 @@ let win = null;
 let config = null;
 let pollTimer = null;
 let usageTimer = null;
+let winCtxTimer = null;
+let sessionsWatcher = null; // fs.watch(SESSIONS_DIR) 句柄
+let watchDebounce = null; // fs.watch 事件去抖计时器
 let lastSessions = [];
 let lastUsage = { ok: false, primary: null, breakdowns: [], timestamp: null };
+// 当前打开的 Kiro 窗口/会话面板上下文（含 kiroRunning）。异步刷新、供 poll 复用，
+// 避免每次轮询都同步 spawn sqlite3（性能）。null 时 scanSessions 降级为不过滤。
+let cachedWinCtx = null;
+let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时才重绘图标）
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
@@ -180,12 +192,25 @@ function updateTrayTitle(sessions) {
   // 菜单栏：图标 + 运行中会话数（无运行中则只留图标，保持干净）
   tray.setTitle(running > 0 ? ` ${running}` : '');
 
+  // ⑥ 失败红点角标：有 failed/stuck（含"已中断"）时给图标叠红点；只在状态切换时重绘
+  const alert = failed > 0;
+  if (alert !== trayAlert) {
+    trayAlert = alert;
+    applyTrayIcon();
+  }
+
   // 详情放到悬停提示里，不占菜单栏空间
   const parts = [];
   if (running > 0) parts.push(`运行中 ${running}`);
   if (failed > 0) parts.push(`待处理 ${failed}`);
   if (waiting > 0) parts.push(`等待确认 ${waiting}`);
   tray.setToolTip(parts.length ? `Kiro 任务监控 · ${parts.join(' · ')}` : 'Kiro 任务监控');
+}
+
+/** 按当前告警状态 + 系统主题重建托盘图标。 */
+function applyTrayIcon() {
+  if (!tray) return;
+  tray.setImage(makeTrayIcon({ alert: trayAlert, dark: nativeTheme.shouldUseDarkColors }));
 }
 
 /* ------------------------------------------------------------------ *
@@ -244,18 +269,22 @@ function handleTransitions(sessions, now) {
 
     // —— 进入 失败 / 卡住 ——
     if ((s.state === STATE.FAILED || s.state === STATE.STUCK) && prevState !== s.state) {
-      if (config.get('notifyFailed')) {
-        notify({
-          title: s.state === STATE.FAILED ? `❌ 任务出错 · ${wsName}` : `⏳ 任务疑似卡住 · ${wsName}`,
-          body:
-            shortTitle(s) +
-            (s.state === STATE.FAILED && s.stopReason ? `\n原因: ${s.stopReason}` : ''),
-          session: s,
-          isFailure: true,
-        });
-      }
-      if (config.get('autoRetry')) {
-        doRetry(s);
+      // ① 确定性中断（Kiro 已不在运行）：不弹通知、不自动重试——用户此时不在 Kiro，
+      //    也无从重试；只在浮窗/托盘红点里标记，等用户回来自行处理，避免退出 Kiro 时刷屏。
+      if (!s.interrupted) {
+        if (config.get('notifyFailed')) {
+          notify({
+            title: s.state === STATE.FAILED ? `❌ 任务出错 · ${wsName}` : `⏳ 任务疑似卡住 · ${wsName}`,
+            body:
+              shortTitle(s) +
+              (s.state === STATE.FAILED && s.stopReason ? `\n原因: ${s.stopReason}` : ''),
+            session: s,
+            isFailure: true,
+          });
+        }
+        if (config.get('autoRetry')) {
+          doRetry(s);
+        }
       }
     }
 
@@ -351,6 +380,9 @@ function poll() {
     stuckDetection: config.get('stuckDetection') !== false,
     onlyOpenSessions: config.get('onlyOpenSessions') !== false,
     onlyFocusedSession: !!config.get('onlyFocusedSession'),
+    // 复用异步刷新的窗口上下文（不在轮询里同步 spawn sqlite3）；null 时降级为不过滤
+    windowContext: cachedWinCtx,
+    kiroRunning: cachedWinCtx ? cachedWinCtx.kiroRunning : undefined,
   });
   lastSessions = sessions;
   handleTransitions(sessions, now);
@@ -364,6 +396,42 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   poll();
   pollTimer = setInterval(poll, config.get('pollMs') || 2000);
+}
+
+/* ------------------------------------------------------------------ *
+ * ④ 窗口上下文：异步刷新 + 缓存（不在轮询里同步 spawn sqlite3）
+ *    ② 事件驱动：会话文件写入即触发一次（去抖）轮询，状态变化亚秒级反映
+ * ------------------------------------------------------------------ */
+async function refreshWinCtx() {
+  try {
+    cachedWinCtx = await readOpenWindowContextAsync();
+  } catch {
+    /* 读取失败保留上次值，不致命 */
+  }
+}
+
+function startWinCtxPolling() {
+  if (winCtxTimer) clearInterval(winCtxTimer);
+  // 窗口/面板状态与 Kiro 进程存活变化较慢，8s 刷新一次足够，且不阻塞轮询
+  winCtxTimer = setInterval(refreshWinCtx, 8000);
+}
+
+// fs.watch 去抖：会话目录一有写入，200ms 内合并为一次 poll（亚秒级反映状态变化）
+function schedulePollSoon() {
+  if (watchDebounce) return;
+  watchDebounce = setTimeout(() => {
+    watchDebounce = null;
+    poll();
+  }, 200);
+}
+
+function startSessionsWatch() {
+  try {
+    if (sessionsWatcher) sessionsWatcher.close();
+    sessionsWatcher = fs.watch(SESSIONS_DIR, { recursive: true }, () => schedulePollSoon());
+  } catch {
+    sessionsWatcher = null; // 监听失败不致命，兜底仍有定时轮询
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -515,16 +583,31 @@ function registerIpc() {
 /* ------------------------------------------------------------------ *
  * 生命周期
  * ------------------------------------------------------------------ */
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   config = new Config(path.join(app.getPath('userData'), 'config.json'));
   if (app.dock) app.dock.hide(); // 菜单栏应用风格，不占 Dock
 
   registerIpc();
   createWindow();
   createTray();
+  // 先拿到一次窗口上下文（含 kiroRunning）再开始轮询，避免首帧因无过滤而闪现残留会话
+  await refreshWinCtx();
   startPolling();
+  startWinCtxPolling(); // ④ 每 8s 异步刷新窗口上下文
+  startSessionsWatch(); // ② 会话文件写入即触发轮询
   startUsagePolling();
   setupAutoUpdate();
+
+  // ③ 休眠唤醒：重建通知基线（不对睡眠期间的跳变补发一堆通知），并立即刷新一次
+  powerMonitor.on('resume', () => {
+    seeded = false;
+    refreshWinCtx().then(poll);
+  });
+
+  // 系统深/浅色切换：告警态的彩色图标需按主题重绘（无告警时是模板图，自动适应）
+  nativeTheme.on('updated', () => {
+    if (trayAlert) applyTrayIcon();
+  });
 
   app.on('activate', () => {
     if (!win) createWindow();

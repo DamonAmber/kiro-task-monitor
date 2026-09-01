@@ -37,8 +37,14 @@ function render(sessions) {
   currentSessions = sessions;
   const failed = sessions.filter((s) => s.state === 'failed' || s.state === 'stuck').length;
   const running = sessions.filter((s) => s.state === 'running').length;
-  countsEl.textContent = sessions.length
-    ? `· ${sessions.length} 个 ${failed ? `· ❗${failed}` : ''}${running ? ` · …${running}` : ''}`
+  const waiting = sessions.filter((s) => s.state === 'waiting').length;
+  // 用带颜色的中文词表达，替代原来看不懂的 ❗/… 符号
+  const segs = [];
+  if (failed) segs.push(`<b class="c-fail">${failed} 待处理</b>`);
+  if (waiting) segs.push(`<b class="c-wait">${waiting} 等待你</b>`);
+  if (running) segs.push(`<b class="c-run">${running} 运行中</b>`);
+  countsEl.innerHTML = sessions.length
+    ? `共 ${sessions.length} 个${segs.length ? ' · ' + segs.join(' · ') : ''}`
     : '';
 
   if (!sessions.length) {
@@ -52,7 +58,8 @@ function render(sessions) {
 
   const html = sessions
     .map((s) => {
-      const label = STATE_LABEL[s.state] || s.state;
+      // 确定性中断（Kiro 已不在运行）显示「已中断」，区别于超时猜测的「疑似卡住」
+      const label = s.interrupted ? '已中断' : STATE_LABEL[s.state] || s.state;
       const isFail = s.state === 'failed' || s.state === 'stuck';
       const timeTxt =
         s.state === 'running' || s.state === 'waiting' || s.state === 'stuck'

@@ -18,11 +18,15 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const {
   GLOBAL_STORAGE_JSON,
   WORKSPACE_STORAGE_DIR,
 } = require('./kiroPaths');
+
+// 用命令行匹配 Kiro 主/辅助进程的可执行文件路径（Electron 应用）。
+// 注意：监控自身是「Kiro 任务监控.app」，其路径不含子串 "Kiro.app"，不会自匹配。
+const KIRO_PROC_PATTERN = 'Kiro.app/Contents/MacOS/';
 
 /** 把 `file:///Users/...` 或普通路径统一成去尾斜杠的本地路径，便于与 workspacePath 比对。 */
 function normFolder(uriOrPath) {
@@ -97,24 +101,16 @@ function readWorkspaceDbMap() {
  *   - readable:false 表示读取失败或键尚不存在（未知）→ 调用方应保守保留该窗口的会话；
  *   - readable:true + 空 ids 表示该窗口确实没有打开任何会话面板。
  */
-function readPanels(dbPath) {
-  const unknown = { readable: false, ids: new Set(), focused: null, titles: new Map() };
-  let out;
-  try {
-    out = execFileSync(
-      'sqlite3',
-      ['-readonly', dbPath, "SELECT value FROM ItemTable WHERE key='kiro.kiroAgent';"],
-      { encoding: 'utf8', timeout: 2000, maxBuffer: 8 * 1024 * 1024 }
-    );
-  } catch {
-    return unknown; // sqlite3 缺失 / DB 锁 / 读取异常 → 未知
-  }
-  const text = (out || '').trim();
-  if (!text) return unknown; // 该键尚不存在（窗口刚打开、还没跑过 agent）→ 未知
+const SQLITE_QUERY = "SELECT value FROM ItemTable WHERE key='kiro.kiroAgent';";
 
+/** 解析 sqlite3 取出的 kiro.kiroAgent 值 → sessionPanels。空/异常返回 unknown。 */
+function parsePanelsValue(text) {
+  const unknown = { readable: false, ids: new Set(), focused: null, titles: new Map() };
+  const s = (text || '').trim();
+  if (!s) return unknown; // 该键尚不存在（窗口刚打开、还没跑过 agent）→ 未知
   let j;
   try {
-    j = JSON.parse(text);
+    j = JSON.parse(s);
   } catch {
     return unknown;
   }
@@ -127,8 +123,54 @@ function readPanels(dbPath) {
       if (e.title) titles.set(e.id, e.title);
     }
   }
-  const focused = j['sessionPanels.focused'] || null;
-  return { readable: true, ids, focused, titles };
+  return { readable: true, ids, focused: j['sessionPanels.focused'] || null, titles };
+}
+
+function readPanels(dbPath) {
+  const unknown = { readable: false, ids: new Set(), focused: null, titles: new Map() };
+  let out;
+  try {
+    out = execFileSync('sqlite3', ['-readonly', dbPath, SQLITE_QUERY], {
+      encoding: 'utf8',
+      timeout: 2000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  } catch {
+    return unknown; // sqlite3 缺失 / DB 锁 / 读取异常 → 未知
+  }
+  return parsePanelsValue(out);
+}
+
+/** readPanels 的异步版本（不阻塞主进程），供主进程定时刷新使用。 */
+function readPanelsAsync(dbPath) {
+  const unknown = { readable: false, ids: new Set(), focused: null, titles: new Map() };
+  return new Promise((resolve) => {
+    execFile(
+      'sqlite3',
+      ['-readonly', dbPath, SQLITE_QUERY],
+      { encoding: 'utf8', timeout: 2000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err) return resolve(unknown);
+        resolve(parsePanelsValue(stdout));
+      }
+    );
+  });
+}
+
+/**
+ * Kiro 主进程是否在运行。返回 true / false / undefined：
+ *   - true      pgrep 命中 Kiro.app 的可执行进程
+ *   - false     pgrep 正常执行但零命中（exit 1）→ 确认 Kiro 未运行
+ *   - undefined pgrep 缺失 / 异常 → 未知（调用方据此**不做**中断判定，保持安全）
+ */
+function isKiroRunningAsync() {
+  return new Promise((resolve) => {
+    execFile('pgrep', ['-f', KIRO_PROC_PATTERN], { timeout: 2000 }, (err) => {
+      if (!err) return resolve(true); // exit 0 → 有匹配
+      if (err.code === 1) return resolve(false); // exit 1 → 确认无匹配
+      resolve(undefined); // 其它（pgrep 缺失等）→ 未知
+    });
+  });
 }
 
 /**
@@ -184,11 +226,67 @@ function readOpenWindowContext() {
   };
 }
 
+/**
+ * readOpenWindowContext 的异步版本，额外返回 `kiroRunning`（Kiro 主进程是否在运行）。
+ * 主进程用它在定时器 / 文件变更时刷新，**不阻塞**（sqlite / pgrep 全走异步 spawn）。
+ * fs 读取（storage.json / workspace.json）本身很快，保持同步。
+ */
+async function readOpenWindowContextAsync() {
+  const base = {
+    ok: false,
+    openFolders: new Set(),
+    activeFolder: null,
+    panelsByFolder: new Map(),
+    openSessionIds: new Set(),
+    focusedSessionIds: new Set(),
+    kiroRunning: undefined,
+  };
+
+  const kiroRunning = await isKiroRunningAsync();
+  const win = readOpenedWindows();
+  if (!win) return { ...base, kiroRunning };
+
+  const dbMap = readWorkspaceDbMap();
+  const panelsByFolder = new Map();
+  const openSessionIds = new Set();
+  const focusedSessionIds = new Set();
+
+  const folders = [...win.openFolders];
+  const results = await Promise.all(
+    folders.map(async (folder) => {
+      const db = dbMap.get(folder);
+      if (!db) return [folder, { readable: false, ids: new Set(), focused: null, titles: new Map() }];
+      return [folder, await readPanelsAsync(db)];
+    })
+  );
+  for (const [folder, panels] of results) {
+    panelsByFolder.set(folder, panels);
+    if (panels.readable) {
+      for (const id of panels.ids) openSessionIds.add(id);
+      if (panels.focused) focusedSessionIds.add(panels.focused);
+    }
+  }
+
+  return {
+    ok: true,
+    openFolders: win.openFolders,
+    activeFolder: win.activeFolder || null,
+    panelsByFolder,
+    openSessionIds,
+    focusedSessionIds,
+    kiroRunning,
+  };
+}
+
 module.exports = {
   readOpenWindowContext,
+  readOpenWindowContextAsync,
+  isKiroRunningAsync,
   normFolder,
   // 便于测试 / 复用
   readOpenedWindows,
   readWorkspaceDbMap,
   readPanels,
+  readPanelsAsync,
+  parsePanelsValue,
 };

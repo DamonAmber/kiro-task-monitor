@@ -58,6 +58,12 @@ electron-builder.yml 打包/签名/公证/发布配置
   里 `key='kiro.kiroAgent'` 的 value(JSON) → 字段 `kiro.resourceNotifications.usageState`
   （`usageLimit`/`currentUsage`/`currentOverages`/`overageCharges`/`resetDate` 等），归一化后展示。
   这是 **Kiro 自己写的缓存快照、非实时 API**：只能读到 Kiro 上次写入的值（UI 用 `timestamp` 标注新鲜度）。
+- **及时 / 性能 / 中断判定**（改 watcher/main/openWindows 前必读）：
+  - 及时：`main.js` 用 `fs.watch(SESSIONS_DIR, {recursive})` 事件驱动，写入即去抖(200ms)触发 `poll()`，另有定时轮询兜底。
+  - 性能：`scanSessions` 有 `_scanCache`，按 session.json / messages.jsonl 的 `mtime+size` 跳过未变会话的读文件+解析（`deriveState` 拆成 `parseSignals`+`decideState`，缓存信号、只用最新 now 轻量重算）。
+    窗口上下文改为**异步缓存**：`readOpenWindowContextAsync` 每 ~8s 刷新到 `cachedWinCtx`，`poll` 复用它（不再每轮同步 `spawn sqlite3`）。
+  - 中断判定：`isKiroRunningAsync`(pgrep 匹配 `Kiro.app/Contents/MacOS/`) 得 `kiroRunning`。`decideState` 里 `kiroRunning===false` 且判为运行中/卡住 → 置 `interrupted=true` 并锁定 STUCK（不受 `stuckDetection` 开关降级影响）。**必须 fail-safe**：pgrep 缺失/异常时 `kiroRunning=undefined`，绝不判中断（否则会把在跑的会话误标中断）。中断会话不弹通知、不自动重试；UI 显示「已中断」。
+  - 休眠：`powerMonitor.on('resume')` 重置 `seeded=false` 重建通知基线，避免对睡眠期间的跳变补发通知。
 
 ## 铁律（容易踩雷）
 1. **只读 `~/.kiro`**：任何情况下都不要写入/修改 Kiro 的会话文件。

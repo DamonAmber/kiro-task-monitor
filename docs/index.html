@@ -296,7 +296,7 @@
           <div class="leg"><span class="dot" style="background:var(--blue)"></span><div><b>运行中</b> <span>· agent 正在执行，显示已运行时长</span></div></div>
           <div class="leg"><span class="dot" style="background:var(--green)"></span><div><b>已完成</b> <span>· 一轮正常结束，轮到你了</span></div></div>
           <div class="leg"><span class="dot" style="background:var(--red)"></span><div><b>出错</b> <span>· 报错停下，需要重试</span></div></div>
-          <div class="leg"><span class="dot" style="background:var(--purple)"></span><div><b>疑似卡住</b> <span>· 长时间无写入，兜底提醒</span></div></div>
+          <div class="leg"><span class="dot" style="background:var(--purple)"></span><div><b>疑似卡住 / 已中断</b> <span>· 长时间无响应，或 Kiro 已退出导致中断</span></div></div>
           <div class="leg"><span class="dot" style="background:var(--amber)"></span><div><b>等待你确认</b> <span>· agent 停下等你输入</span></div></div>
           <div class="leg"><span class="dot" style="background:var(--dim)"></span><div><b>空闲 / 已取消</b> <span>· 无进行中的任务</span></div></div>
         </div>
@@ -331,7 +331,7 @@
           </div>
           <div class="feat">
             <span class="ic">📊</span><h3>菜单栏概览</h3>
-            <p>菜单栏一个 <code>◐</code> 图标，后面跟当前运行中的会话数（没有就只显示图标，清清爽爽）；光标停上去看运行中 / 待处理详情。左键显示/隐藏浮窗，右键打开快捷菜单。</p>
+            <p>菜单栏一个 <code>◐</code> 图标，后面跟当前运行中的会话数（没有就只显示图标，清清爽爽）；有任务出错 / 卡住时，图标角上亮一个红点提醒。光标停上去看运行中 / 待处理详情。左键显示/隐藏浮窗，右键打开快捷菜单。</p>
           </div>
           <div class="feat">
             <span class="ic">⚙️</span><h3>按需设置</h3>

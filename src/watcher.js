@@ -104,12 +104,12 @@ function readSessionMeta(sessionJsonPath) {
  * 状态推导：基于 messages.jsonl 事件流 + session.json 状态
  * ------------------------------------------------------------------ */
 
-function deriveState(meta, lines, mtimeMs, now, opts) {
-  const stuckMs = (opts && opts.stuckMs) || DEFAULTS.stuckMs;
-  const toolStuckMs = (opts && opts.toolStuckMs) || DEFAULTS.toolStuckMs;
-  // 卡死超时兜底开关：关掉后完全不按时长判 stuck，只保留失败事件(turn_end)驱动的判定
-  const stuckDetection = !(opts && opts.stuckDetection === false);
-
+/**
+ * 解析 messages.jsonl 事件流，抽取用于状态判定的信号。这一步是「重活」
+ * （遍历已解析的事件），与 decideState 分离后，scanSessions 可按文件 mtime
+ * 缓存信号、跳过对未变化会话的重复读取与解析（性能优化）。
+ */
+function parseSignals(lines) {
   let lastTurnStartTs = 0;
   let lastTurnEnd = null; // { ts, stopReason }
   let lastEventTs = 0;
@@ -174,6 +174,51 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
     }
   }
 
+  // 本轮内是否有工具仍在执行（tool_call 未见 tool_result，且发生在最近一轮）
+  let inflightToolTs = 0;
+  let inflightToolName = '';
+  for (const it of inflightTools.values()) {
+    if (it.ts >= lastTurnStartTs && it.ts > inflightToolTs) {
+      inflightToolTs = it.ts;
+      inflightToolName = it.name;
+    }
+  }
+
+  return {
+    lastTurnStartTs,
+    lastTurnEnd,
+    lastEventTs,
+    lastUserTs,
+    pendingCount: pendingById.size,
+    lastPending,
+    inflightToolTs,
+    inflightToolName,
+  };
+}
+
+/**
+ * 由「信号 + session.json.status + 时间」判定会话状态。与 parseSignals 分离，
+ * 便于缓存信号；本函数很轻（不读文件、不解析），可每轮用最新的 now 重算。
+ */
+function decideState(meta, sig, mtimeMs, now, opts) {
+  const stuckMs = (opts && opts.stuckMs) || DEFAULTS.stuckMs;
+  const toolStuckMs = (opts && opts.toolStuckMs) || DEFAULTS.toolStuckMs;
+  // 卡死超时兜底开关：关掉后完全不按时长判 stuck，只保留失败事件(turn_end)驱动的判定
+  const stuckDetection = !(opts && opts.stuckDetection === false);
+  // ① 确定性中断：主进程明确告知 Kiro 未在运行（kiroRunning===false）时，
+  //    运行中的会话即为「已中断」（进程被杀/崩溃/退出），无需靠超时去猜。
+  const kiroRunning = opts ? opts.kiroRunning : undefined;
+
+  const {
+    lastTurnStartTs,
+    lastTurnEnd,
+    lastEventTs,
+    lastPending,
+    pendingCount,
+    inflightToolTs,
+    inflightToolName,
+  } = sig;
+
   const lastActivityMs = Math.max(mtimeMs, lastEventTs);
   const idleFor = now - lastActivityMs;
 
@@ -183,19 +228,10 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
 
   // 当前是否有未解决的、且发生在最近的 pending_interaction（阻塞等待用户）
   const openPending =
-    pendingById.size > 0 && lastPending && lastPending.ts >= lastTurnStartTs
+    pendingCount > 0 && lastPending && lastPending.ts >= lastTurnStartTs
       ? lastPending
       : null;
 
-  // 本轮内是否有工具仍在执行（tool_call 未见 tool_result）
-  let inflightToolTs = 0;
-  let inflightToolName = '';
-  for (const it of inflightTools.values()) {
-    if (it.ts >= lastTurnStartTs && it.ts > inflightToolTs) {
-      inflightToolTs = it.ts;
-      inflightToolName = it.name;
-    }
-  }
   const hasInflightTool = inflightToolTs > 0;
 
   // 有工具在执行时用更长的卡住宽限（慢查询/长命令/构建/测试属正常），避免误报。
@@ -267,13 +303,23 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
     }
   }
 
-  // 关闭超时兜底时：把"疑似卡住"降级为"运行中"，只让失败事件来触发告警
-  if (state === STATE.STUCK && !stuckDetection) state = STATE.RUNNING;
+  // ① 确定性中断：确知 Kiro 未在运行，却判为运行中/卡住 → 标记为「已中断」。
+  //    这不是靠超时猜的，而是进程层面确认（窗口/进程已消失），准确且即时。
+  let interrupted = false;
+  if (kiroRunning === false && (state === STATE.RUNNING || state === STATE.STUCK)) {
+    state = STATE.STUCK;
+    interrupted = true;
+  }
+
+  // 关闭超时兜底时：把"疑似卡住"降级为"运行中"，只让失败事件来触发告警；
+  // 但**确定性中断**不降级——它是确知的中断，不受该开关影响。
+  if (state === STATE.STUCK && !stuckDetection && !interrupted) state = STATE.RUNNING;
 
   return {
     state,
     stopReason,
     question,
+    interrupted, // true = 确知 Kiro 已不在运行导致的中断（区别于超时猜测的 stuck）
     elapsedMs, // running/waiting：本轮已运行时长；done/failed：本轮耗时
     idleMs: idleFor, // 距上次写入时长（用于展示与卡死判断）
     runningTool:
@@ -285,6 +331,11 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
       ? lastTurnEnd.ts - lastTurnStartTs
       : 0,
   };
+}
+
+/** 兼容包装：读事件流 → 解析信号 → 判定状态。测试与 CLI 仍可直接用它。 */
+function deriveState(meta, lines, mtimeMs, now, opts) {
+  return decideState(meta, parseSignals(lines), mtimeMs, now, opts);
 }
 
 /* ------------------------------------------------------------------ *
@@ -407,9 +458,14 @@ function applyOpenWindowFilter(sessions, opts = {}) {
   });
 }
 
+// ⑤ 扫描缓存：dir → { sMtime, mMtime, mSize, meta, signals }。
+// 文件（session.json / messages.jsonl）的 mtime+size 未变化时，复用已解析的 meta 与信号，
+// 跳过读文件与 JSON 解析（最贵的部分）；只用最新的 now 重跑轻量的 decideState。
+const _scanCache = new Map();
+
 /**
  * 扫描并返回每个（最近活跃的）会话的状态快照。
- * @param {object} opts { activeWithinMs, stuckMs, tailBytes, now, onlyOpenSessions, onlyFocusedSession, windowContext }
+ * @param {object} opts { activeWithinMs, stuckMs, tailBytes, now, onlyOpenSessions, onlyFocusedSession, windowContext, kiroRunning }
  * @returns {Array<Session>} 按最近活动时间倒序
  */
 function scanSessions(opts = {}) {
@@ -421,27 +477,50 @@ function scanSessions(opts = {}) {
   const tailBytes = opts.tailBytes ?? DEFAULTS.tailBytes;
 
   const dirs = listSessionDirs();
+  const seen = new Set(); // 本轮见到的 dir，用于清理缓存里已消失的会话
   let out = [];
 
   for (const d of dirs) {
     // 先用 messages.jsonl 或 session.json 的 mtime 做粗过滤
     let msgMtime = 0;
+    let msgSize = 0;
     try {
-      msgMtime = fs.statSync(d.messages).mtimeMs;
+      const st = fs.statSync(d.messages);
+      msgMtime = st.mtimeMs;
+      msgSize = st.size;
     } catch {
       msgMtime = 0;
+      msgSize = 0;
     }
     const recentMtime = Math.max(d.mtimeMs, msgMtime);
     if (activeWithinMs > 0 && now - recentMtime > activeWithinMs) continue;
 
-    const meta = readSessionMeta(d.sessionJson);
-    if (!meta) continue;
+    // ⑤ 命中缓存（session.json 与 messages.jsonl 都未变化）→ 复用 meta + 信号，跳过读+解析
+    let entry = _scanCache.get(d.dir);
+    if (!entry || entry.sMtime !== d.mtimeMs || entry.mMtime !== msgMtime || entry.mSize !== msgSize) {
+      const m = readSessionMeta(d.sessionJson);
+      if (!m) {
+        _scanCache.delete(d.dir);
+        continue;
+      }
+      const { lines } = tailJsonLines(d.messages, tailBytes);
+      entry = {
+        sMtime: d.mtimeMs,
+        mMtime: msgMtime,
+        mSize: msgSize,
+        meta: m,
+        signals: parseSignals(lines),
+      };
+      _scanCache.set(d.dir, entry);
+    }
+    seen.add(d.dir);
+    const meta = entry.meta;
 
-    const { lines, mtimeMs } = tailJsonLines(d.messages, tailBytes);
-    const derived = deriveState(meta, lines, Math.max(mtimeMs, msgMtime), now, {
+    const derived = decideState(meta, entry.signals, msgMtime, now, {
       stuckMs,
       toolStuckMs,
       stuckDetection,
+      kiroRunning: opts.kiroRunning, // ① 中断判定（undefined 时不触发，保持安全）
     });
 
     out.push({
@@ -457,6 +536,11 @@ function scanSessions(opts = {}) {
       messagesPath: d.messages,
       ...derived,
     });
+  }
+
+  // 清理缓存里本轮未再出现的会话（已被删除 / 超出活跃窗口），避免无限增长
+  if (_scanCache.size > seen.size) {
+    for (const k of _scanCache.keys()) if (!seen.has(k)) _scanCache.delete(k);
   }
 
   // —— 只保留「当前 Kiro 窗口里真正打开/激活的会话」，剔除历史残留 —— //
@@ -499,6 +583,8 @@ module.exports = {
   FAIL_REASONS,
   scanSessions,
   deriveState,
+  parseSignals,
+  decideState,
   readSessionMeta,
   tailJsonLines,
   listSessionDirs,

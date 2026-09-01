@@ -68,6 +68,22 @@ body {
 .counts {
   font-size: 11px;
   color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+.counts b {
+  font-weight: 600;
+}
+.counts .c-fail {
+  color: var(--failed);
+}
+.counts .c-wait {
+  color: var(--waiting);
+}
+.counts .c-run {
+  color: var(--running);
 }
 .nodrag {
   -webkit-app-region: no-drag;

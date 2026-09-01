@@ -16,8 +16,14 @@ function clamp(v, a, b) {
   return v < a ? a : v > b ? b : v;
 }
 
-/** 画一个尺寸为 S×S 的 ◐（黑色 + alpha 覆盖），返回 RGBA buffer。 */
-function drawGlyph(S) {
+/**
+ * 画一个尺寸为 S×S 的 ◐，返回 RGBA buffer。
+ * @param {number} S 边长
+ * @param {{color?:number[], dot?:boolean}} opts
+ *        color 字形颜色（默认黑，用于模板图）；dot=true 时在右上角叠一个红点（失败角标）
+ */
+function drawGlyph(S, opts = {}) {
+  const color = opts.color || [0, 0, 0];
   const buf = Buffer.alloc(S * S * 4); // 透明底 RGBA
   const c = S / 2;
   const r = S * 0.38; // 外圆半径
@@ -34,10 +40,28 @@ function drawGlyph(S) {
       const cov = Math.max(ring, leftFill);
       if (cov <= 0) continue;
       const i = (y * S + x) * 4;
-      buf[i] = 0; // 模板图颜色不重要，用黑
-      buf[i + 1] = 0;
-      buf[i + 2] = 0;
+      buf[i] = color[0];
+      buf[i + 1] = color[1];
+      buf[i + 2] = color[2];
       buf[i + 3] = clamp(cov * 255, 0, 255);
+    }
+  }
+  // 失败角标：右上角红点（覆盖在最上层）
+  if (opts.dot) {
+    const dcx = S * 0.75;
+    const dcy = S * 0.25;
+    const dr = S * 0.22;
+    const RED = [237, 66, 69];
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const cov = clamp(0.5 - (Math.hypot(x + 0.5 - dcx, y + 0.5 - dcy) - dr), 0, 1);
+        if (cov <= 0) continue;
+        const i = (y * S + x) * 4;
+        buf[i] = RED[0];
+        buf[i + 1] = RED[1];
+        buf[i + 2] = RED[2];
+        buf[i + 3] = Math.max(buf[i + 3], clamp(cov * 255, 0, 255));
+      }
     }
   }
   return buf;
@@ -87,16 +111,21 @@ function encodePNG(rgba, S) {
  * 生成菜单栏用的模板图标 nativeImage（18pt，含 @2x 表征，crisp on retina）。
  * 生成失败时返回空图（不影响 app 运行，只是没图标）。
  */
-function makeTrayIcon() {
+function makeTrayIcon(opts = {}) {
+  const { nativeImage } = require('electron');
   try {
-    const { nativeImage } = require('electron');
-    const img = nativeImage.createFromBuffer(encodePNG(drawGlyph(18), 18)); // 1x
+    const alert = !!opts.alert;
+    // 无告警：模板图（黑+alpha），由 macOS 自适应深/浅色菜单栏；
+    // 有告警：彩色图（不能用模板，否则红点会被抹成单色），字形颜色按主题手动选。
+    const glyphColor = alert ? (opts.dark ? [235, 235, 235] : [45, 45, 45]) : [0, 0, 0];
+    const draw = (S) => encodePNG(drawGlyph(S, { color: glyphColor, dot: alert }), S);
+    const img = nativeImage.createFromBuffer(draw(18)); // 1x
     try {
-      img.addRepresentation({ scaleFactor: 2, width: 18, height: 18, buffer: encodePNG(drawGlyph(36), 36) });
+      img.addRepresentation({ scaleFactor: 2, width: 18, height: 18, buffer: draw(36) });
     } catch {
       /* 加 @2x 失败也无妨，1x 仍可用 */
     }
-    img.setTemplateImage(true);
+    img.setTemplateImage(!alert);
     return img;
   } catch {
     return nativeImage.createEmpty();
