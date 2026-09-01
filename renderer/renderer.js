@@ -268,7 +268,10 @@ function renderUsage() {
     usageMainEl.textContent = `剩 ${fmtNum(p.remaining)} / ${fmtNum(p.usageLimit)} ${unit}`;
     usagePctEl.textContent = `${fmtNum(pct)}%`;
   }
-  usageSubEl.textContent = fmtReset(p.resetDate);
+  // 副行：重置倒计时 + 数据新鲜度（用量是 Kiro 缓存快照、非实时，让新鲜度可见）
+  const resetTxt = fmtReset(p.resetDate);
+  const freshTxt = u.timestamp ? `更新于 ${fmtAgo(u.timestamp)}` : '';
+  usageSubEl.textContent = [resetTxt, freshTxt].filter(Boolean).join(' · ');
 
   // 悬停看完整明细
   const tip = [
