@@ -209,6 +209,7 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
   let elapsedMs = 0;
 
   if (turnOpen) {
+    // 事件流显示当前有一轮正在进行（turn_start 在 tail 里、且晚于最后的 turn_end）——最直接的信号
     if (openPending) {
       state = STATE.WAITING;
       question = openPending.question ? String(openPending.question).slice(0, 140) : '';
@@ -220,6 +221,28 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
       state = STATE.RUNNING;
       elapsedMs = now - lastTurnStartTs;
     }
+  } else if (meta.status === 'in_progress') {
+    // Kiro 权威状态说「仍在进行」，但事件流里看不到未闭合的 turn。
+    // 最常见的原因：会话很长，当前这一轮的 turn_start 已滚出 tail 窗口（512KB），
+    // 而 tail 里只留着上一轮的 turn_end，导致「看起来已闭合」。此时**以 session.json.status
+    // 为准**，判定为运行中（或按阈值判卡住），避免把正在跑的会话误判成「已完成」
+    // 而从列表中消失——这正是用户反馈「Kiro 在跑却不显示活跃会话」的主因之一。
+    if (openPending) {
+      state = STATE.WAITING;
+      question = openPending.question ? String(openPending.question).slice(0, 140) : '';
+      elapsedMs = now - openPending.ts;
+    } else {
+      state = idleFor > effectiveStuckMs ? STATE.STUCK : STATE.RUNNING;
+      // 当前轮的 turn_start 不可见时耗时未知，置 0（UI 不显示时长），状态仍准
+      elapsedMs = 0;
+    }
+  } else if (meta.status === 'waiting_on_user') {
+    // Kiro 权威状态说「等待用户」——即便事件流截断也以此为准
+    state = STATE.WAITING;
+    if (openPending) {
+      question = openPending.question ? String(openPending.question).slice(0, 140) : '';
+      elapsedMs = now - openPending.ts;
+    }
   } else if (lastTurnEnd) {
     elapsedMs = lastTurnStartTs > 0 ? lastTurnEnd.ts - lastTurnStartTs : 0; // 本轮耗时
     if (FAIL_REASONS.has(stopReason)) {
@@ -227,22 +250,14 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
     } else if (stopReason === 'cancelled') {
       state = STATE.CANCELLED;
     } else {
-      // end_turn / tool_use / 其它：一轮正常结束
-      if (meta.status === 'waiting_on_user') state = STATE.WAITING;
-      else state = STATE.DONE;
+      // end_turn / tool_use / 其它：一轮正常结束（in_progress/waiting_on_user 已在上面处理）
+      state = STATE.DONE;
     }
   } else {
-    // 没有任何 turn 事件，退回到 session.json 的 status
+    // 既无 turn 事件、status 也非 in_progress/waiting_on_user（已在上面处理）
     switch (meta.status) {
       case 'failed':
         state = STATE.FAILED;
-        break;
-      case 'in_progress':
-        // 同样按「是否有在途工具」放宽阈值（覆盖 turn_start 滚出 tail 的慢查询场景）
-        state = idleFor > effectiveStuckMs ? STATE.STUCK : STATE.RUNNING;
-        break;
-      case 'waiting_on_user':
-        state = STATE.WAITING;
         break;
       case 'completed':
         state = STATE.DONE;
@@ -361,27 +376,34 @@ function applyOpenWindowFilter(sessions, opts = {}) {
 
   if (!onlyOpen || !ctx || !ctx.ok) return sessions; // 降级：不过滤
 
-  // 「此刻真实存活 / 需要你处理」的会话（运行中·等待你·出错·卡住，且近期有活动），
-  // 永远显示，凌驾于「只显示已打开」的过滤之上。
-  //
-  // 原因：Kiro（VS Code 内核）的窗口/会话面板状态（storage.json、state.vscdb 的
-  // sessionPanels.entries）是**周期性落盘、会滞后**的。当「Kiro 已在运行 → 用户刚装并
-  // 打开本 App」时，那条正在跑的会话可能还没被写进面板记录，仅凭面板列表过滤就会把它漏掉
-  // （用户反馈的正是此现象）。这类会话按定义不是历史残留，故直接放行；用近期活动时间
-  // 作护栏，确保不会把早已结束的老残留（idle 很久）误翻出来。
-  const LIVE_RECENT_MS = 10 * 60 * 1000; // 近 10 分钟有写入才算「此刻存活」
+  // 「活跃 / 需要你处理」的会话：运行中 · 等待你 · 出错 · 卡住。
   const ATTENTION = new Set([STATE.RUNNING, STATE.WAITING, STATE.FAILED, STATE.STUCK]);
-  const isLiveNow = (s) =>
-    ATTENTION.has(s.state) && (s.idleMs ?? Infinity) <= LIVE_RECENT_MS;
+  const isActive = (s) => ATTENTION.has(s.state);
+  // 窗口状态识别不到该会话所属工作区时的护栏：只显示「此刻确实存活」的活跃会话。
+  // 取值放宽到 30min，覆盖「正在跑长工具、长时间无写入」的运行会话（否则会被误当残留隐藏），
+  // 同时仍能滤掉早已结束的老残留。
+  const GRACE_MS = 30 * 60 * 1000;
+  const recentlyActive = (s) => (s.idleMs ?? Infinity) <= GRACE_MS;
 
   return sessions.filter((s) => {
-    if (isLiveNow(s)) return true; // 活跃/待处理会话优先，绝不因窗口状态滞后而被隐藏
     const f = normFolder(s.workspacePath);
-    if (!ctx.openFolders.has(f)) return false; // 工作区窗口未打开 → 残留会话
-    const panels = ctx.panelsByFolder.get(f);
-    if (!panels || !panels.readable) return true; // 窗口开着但面板未知 → 保守保留
-    if (onlyFocused) return !!s.id && s.id === panels.focused;
-    return !!s.id && panels.ids.has(s.id);
+    const windowOpen = ctx.openFolders.has(f);
+
+    if (windowOpen) {
+      // 窗口就开着 → 不是历史残留。窗口里的**活跃会话一律显示**，无论 Kiro 的面板记录
+      // 是否已收录它、也无论静默多久（Kiro 的窗口/面板状态是周期性落盘、会滞后的，
+      // 刚打开 App 时正在跑的会话常常还没被写进面板列表——这是用户反馈的另一主因）。
+      if (isActive(s)) return true;
+      const panels = ctx.panelsByFolder.get(f);
+      if (!panels || !panels.readable) return true; // 面板未知 → 保守保留
+      if (onlyFocused) return !!s.id && s.id === panels.focused;
+      return !!s.id && panels.ids.has(s.id);
+    }
+
+    // 该会话工作区没匹配到打开的窗口：可能是历史残留，也可能是窗口状态读取滞后 /
+    // 多根工作区 / 路径不匹配等。仅当会话此刻确实存活（活跃状态 + 近期有活动）才显示，
+    // 兼顾「过滤残留」与「绝不漏掉正在跑的会话」。
+    return isActive(s) && recentlyActive(s);
   });
 }
 
