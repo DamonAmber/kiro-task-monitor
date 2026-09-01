@@ -39,7 +39,9 @@ Kiro 的窗口标题恰好是工作区文件夹名（如 `mijia-net`），因此
 
 ## 下载安装（面向用户）
 
-👉 **[前往 Releases 下载最新版](https://github.com/DamonAmber/kiro-task-monitor/releases/latest)**
+🌐 **官网（介绍 + 下载）**：https://damonamber.github.io/kiro-task-monitor/
+
+👉 或直接 **[前往 Releases 下载最新版](https://github.com/DamonAmber/kiro-task-monitor/releases/latest)**
 
 下载其中的 `KiroTaskMonitor-<版本>-universal.dmg`，打开后把 app 拖进「应用程序」即可运行
 （Apple Silicon 与 Intel 通用）。已签名 + 公证，双击直接打开，**无需右键绕过 Gatekeeper**。
