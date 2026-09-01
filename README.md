@@ -128,10 +128,18 @@ build/
   icon.png           app 图标源（electron-builder 自动转 .icns）
   entitlements.mac.plist  硬化运行时权限（公证所需）
 scripts/
-  release.sh         一键发版（读 .env → 签名+公证+上传）
+  release.sh         本地应急发版（读 .env → 签名+公证+上传）
 tools/
   make-icon.js       无依赖生成图标
   watch-cli.js       无界面的终端版监控（验证用）
-RELEASE.md           发版 / 签名 / 公证 / 自动更新完整指南
-.env.example         凭据模板（复制为 .env 填写）
+.github/workflows/
+  release.yml        打 tag 触发的自动发版流水线（正规发版路径）
+AGENTS.md            维护者 / 接手 AI 的交接说明（架构 · 铁律）
+RELEASE.md           发版手册（签名 · 公证 · 自动更新 · 凭据重建 · 排障）
+.env.example         本地应急发版的凭据模板（复制为 .env 填写）
 ```
+
+## 维护 / 交接
+
+接手本项目（无论人或 AI）先读 **[AGENTS.md](./AGENTS.md)**（架构与铁律），发版按 **[RELEASE.md](./RELEASE.md)**。
+一句话规矩：只读 `~/.kiro`、不改 `appId`、发版一律 `npm version` + 打 tag 触发 CI、`.env` 永不提交。
