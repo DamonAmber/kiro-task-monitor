@@ -1,7 +1,7 @@
 {
   "name": "kiro-task-monitor",
   "productName": "Kiro 任务监控",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Mac 桌面浮窗，实时监控所有 Kiro 会话任务：运行中 / 已完成 / 出错需重试，失败一键重试、完成弹通知。",
   "main": "main.js",
   "private": true,
