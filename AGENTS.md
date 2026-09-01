@@ -16,6 +16,8 @@ src/
                      判断哪些会话真正打开/聚焦，供 watcher 过滤残留、标注 isFocused
   usage.js           只读 Kiro 全局 state.vscdb 缓存的套餐用量（额度/已用/超额/重置日），
                      主进程每 60s 刷新推给浮窗，底部展示；只读、非实时、读不到即降级不显示
+  trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标(setTemplateImage)；因 build/ 不打包，
+                     故在代码里画 PNG。菜单栏标题只显示运行中会话数，详情放 tooltip
   retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底
   config.js          配置读写（userData/config.json）
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据（Application Support/Kiro）路径

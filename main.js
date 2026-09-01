@@ -9,7 +9,6 @@ const {
   Menu,
   Notification,
   ipcMain,
-  nativeImage,
   screen,
   shell,
 } = require('electron');
@@ -17,6 +16,7 @@ const {
 const { autoUpdater } = require('electron-updater');
 const { scanSessions, STATE } = require('./src/watcher');
 const { readUsage } = require('./src/usage');
+const { makeTrayIcon } = require('./src/trayIcon');
 const retry = require('./src/retry');
 const { Config } = require('./src/config');
 
@@ -133,7 +133,7 @@ function toggleWindow() {
  * 托盘
  * ------------------------------------------------------------------ */
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty());
+  tray = new Tray(makeTrayIcon());
   tray.setToolTip('Kiro 任务监控');
   updateTrayTitle([]);
   tray.on('click', toggleWindow);
@@ -172,15 +172,20 @@ function showTrayMenu() {
 }
 
 function updateTrayTitle(sessions) {
+  if (!tray) return;
   const failed = sessions.filter((s) => s.state === STATE.FAILED || s.state === STATE.STUCK).length;
   const running = sessions.filter((s) => s.state === STATE.RUNNING).length;
   const waiting = sessions.filter((s) => s.state === STATE.WAITING).length;
-  let title = 'K';
-  if (failed > 0) title = `K ❗${failed}`;
-  else if (waiting > 0) title = `K ⏸${waiting}`;
-  else if (running > 0) title = `K …${running}`;
-  else title = 'K ✓';
-  if (tray) tray.setTitle(` ${title}`);
+
+  // 菜单栏：图标 + 运行中会话数（无运行中则只留图标，保持干净）
+  tray.setTitle(running > 0 ? ` ${running}` : '');
+
+  // 详情放到悬停提示里，不占菜单栏空间
+  const parts = [];
+  if (running > 0) parts.push(`运行中 ${running}`);
+  if (failed > 0) parts.push(`待处理 ${failed}`);
+  if (waiting > 0) parts.push(`等待确认 ${waiting}`);
+  tray.setToolTip(parts.length ? `Kiro 任务监控 · ${parts.join(' · ')}` : 'Kiro 任务监控');
 }
 
 /* ------------------------------------------------------------------ *
