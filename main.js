@@ -26,6 +26,13 @@ let pollTimer = null;
 let lastSessions = [];
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
+// 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
+let updateState = { status: 'idle', current: '', latest: '', progress: 0, error: '' };
+
+function pushUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  if (win && !win.isDestroyed()) win.webContents.send('update:state', updateState);
+}
 
 // 上一轮每个会话的状态，用于检测“状态跳变”并触发通知
 // key -> { state, waitingSince, notifiedDone }
@@ -387,18 +394,32 @@ function restartToUpdate() {
  * 自动更新（仅打包后的正式版启用；从 GitHub Releases 检查）
  * ------------------------------------------------------------------ */
 function setupAutoUpdate() {
-  if (!app.isPackaged) return; // 开发环境（npm start）不检查更新
+  updateState.current = app.getVersion();
+  if (!app.isPackaged) {
+    pushUpdateState({ status: 'dev' }); // 开发环境（npm start）不检查更新
+    return;
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('error', (e) => console.error('[update] error:', e && e.message));
-  autoUpdater.on('update-available', (i) => console.log('[update] 发现新版本', i && i.version));
-  autoUpdater.on('update-not-available', () => console.log('[update] 已是最新'));
+  autoUpdater.on('checking-for-update', () => pushUpdateState({ status: 'checking', error: '' }));
+  autoUpdater.on('update-available', (i) => {
+    pushUpdateState({ status: 'available', latest: (i && i.version) || '', progress: 0 });
+  });
+  autoUpdater.on('update-not-available', () => pushUpdateState({ status: 'not-available' }));
+  autoUpdater.on('download-progress', (p) =>
+    pushUpdateState({ status: 'downloading', progress: Math.round((p && p.percent) || 0) })
+  );
+  autoUpdater.on('error', (e) => {
+    console.error('[update] error:', e && e.message);
+    pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
+  });
   autoUpdater.on('update-downloaded', (i) => {
+    pushUpdateState({ status: 'downloaded', latest: (i && i.version) || '' });
     if (!Notification.isSupported()) return;
     updateNotification = new Notification({
       title: '更新已就绪',
-      body: `新版本 ${i && i.version} 已下载。点此立即重启更新（或稍后退出时自动安装）。`,
+      body: `新版本 ${i && i.version} 已下载。点此立即重启更新（或到设置里点「重启并更新」）。`,
       silent: false,
       actions: [{ type: 'button', text: '立即重启' }],
     });
@@ -407,7 +428,9 @@ function setupAutoUpdate() {
     updateNotification.show();
   });
 
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  const check = () => autoUpdater.checkForUpdates().catch((e) => {
+    pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
+  });
   check();
   setInterval(check, 6 * 60 * 60 * 1000); // 每 6 小时检查一次
 }
@@ -435,6 +458,28 @@ function registerIpc() {
   ipcMain.handle('window:hide', () => win && win.hide());
   ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // —— 更新相关 —— //
+  ipcMain.handle('update:state', () => updateState);
+  ipcMain.handle('update:check', async () => {
+    if (!app.isPackaged) {
+      pushUpdateState({ status: 'dev' });
+      return { ok: false, dev: true };
+    }
+    try {
+      pushUpdateState({ status: 'checking', error: '' });
+      const r = await autoUpdater.checkForUpdates();
+      return { ok: true, version: r && r.updateInfo && r.updateInfo.version };
+    } catch (e) {
+      pushUpdateState({ status: 'error', error: (e && e.message) || String(e) });
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+  });
+  ipcMain.handle('update:install', () => {
+    if (updateState.status !== 'downloaded') return { ok: false, error: 'no-update' };
+    restartToUpdate();
+    return { ok: true };
+  });
 }
 
 /* ------------------------------------------------------------------ *

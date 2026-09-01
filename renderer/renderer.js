@@ -137,6 +137,67 @@ function bindSettings(config) {
   });
 }
 
+/* ---------- 更新 ---------- */
+function renderUpdate(state) {
+  if (!state) return;
+  const statusEl = document.getElementById('update-status');
+  const installBtn = document.getElementById('btn-install-update');
+  const checkBtn = document.getElementById('btn-check-update');
+  const verEl = document.getElementById('version');
+  if (verEl && state.current) verEl.textContent = `Kiro 任务监控 v${state.current}`;
+
+  statusEl.classList.remove('ok', 'err');
+  let text = '';
+  let showInstall = false;
+  let checking = false;
+  switch (state.status) {
+    case 'checking':
+      text = '正在检查更新…';
+      checking = true;
+      break;
+    case 'available':
+      text = `发现新版本 v${state.latest}，正在下载…`;
+      break;
+    case 'downloading':
+      text = `下载中 ${state.progress || 0}%…`;
+      break;
+    case 'downloaded':
+      text = `新版本 v${state.latest} 已就绪`;
+      statusEl.classList.add('ok');
+      showInstall = true;
+      break;
+    case 'not-available':
+      text = '已是最新版本 ✓';
+      statusEl.classList.add('ok');
+      break;
+    case 'error':
+      text = `检查失败：${state.error || '未知错误'}`;
+      statusEl.classList.add('err');
+      break;
+    case 'dev':
+      text = '开发模式不检查更新';
+      break;
+    default:
+      text = '';
+  }
+  statusEl.textContent = text;
+  installBtn.classList.toggle('hidden', !showInstall);
+  checkBtn.disabled = checking;
+  checkBtn.textContent = checking ? '检查中…' : '检查更新';
+}
+
+document.getElementById('btn-check-update').addEventListener('click', () => {
+  const statusEl = document.getElementById('update-status');
+  statusEl.classList.remove('ok', 'err');
+  statusEl.textContent = '正在检查更新…';
+  window.api.checkUpdate();
+});
+document.getElementById('btn-install-update').addEventListener('click', () => {
+  document.getElementById('update-status').textContent = '正在重启并安装…';
+  window.api.installUpdate();
+});
+window.api.onUpdateState((state) => renderUpdate(state));
+
 /* ---------- 数据流 ---------- */
 window.api.onSessions(({ sessions, config }) => {
   render(sessions || []);
@@ -148,8 +209,7 @@ window.api.onSessions(({ sessions, config }) => {
   const { sessions } = await window.api.getSessions();
   render(sessions || []);
   try {
-    const v = await window.api.getVersion();
-    const el = document.getElementById('version');
-    if (el) el.textContent = `Kiro 任务监控 v${v}`;
+    const st = await window.api.getUpdateState();
+    renderUpdate(st);
   } catch {}
 })();

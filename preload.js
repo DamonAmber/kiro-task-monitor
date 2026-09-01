@@ -22,4 +22,13 @@ contextBridge.exposeInMainWorld('api', {
   hideWindow: () => ipcRenderer.invoke('window:hide'),
   quit: () => ipcRenderer.invoke('app:quit'),
   getVersion: () => ipcRenderer.invoke('app:version'),
+  // 更新：手动检查 / 一键重启安装 / 读取状态 / 订阅状态推送
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  getUpdateState: () => ipcRenderer.invoke('update:state'),
+  onUpdateState: (cb) => {
+    const handler = (_e, state) => cb(state);
+    ipcRenderer.on('update:state', handler);
+    return () => ipcRenderer.removeListener('update:state', handler);
+  },
 });
