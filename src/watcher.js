@@ -272,8 +272,13 @@ function decideState(meta, sig, mtimeMs, now, opts) {
       // 当前轮的 turn_start 不可见时耗时未知，置 0（UI 不显示时长），状态仍准
       elapsedMs = 0;
     }
-  } else if (meta.status === 'waiting_on_user') {
-    // Kiro 权威状态说「等待用户」——即便事件流截断也以此为准
+  } else if (meta.status === 'waiting_on_user' && (openPending || !lastTurnEnd)) {
+    // 仅在两种情形下凭 waiting_on_user 判为「等待你」：
+    //   1) 有未解决的 pending_interaction（openPending）——agent 真被阻塞、等你确认/输入；
+    //   2) 事件流被截断、tail 里根本看不到本轮 turn_end——以权威 status 兜底，避免漏报。
+    // 若本轮已能看到正常的 turn_end（见下面 else if 分支），说明 agent 只是在轮末调用
+    // update_session_information 标注了 waiting_on_user（语义为「已产出结果并向你提问」），
+    // 任务其实已完成——落到 turn_end 分支判为「已完成」，避免把它误报成「等待你」。
     state = STATE.WAITING;
     if (openPending) {
       question = openPending.question ? String(openPending.question).slice(0, 140) : '';
