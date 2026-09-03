@@ -24,6 +24,13 @@
         </div>
       </header>
 
+      <!-- 系统授权提醒横幅（缺授权时才显示） -->
+      <div class="perm-banner hidden" id="perm-banner">
+        <span class="perm-banner-icon" id="perm-banner-icon">⚠️</span>
+        <span class="perm-banner-text" id="perm-banner-text"></span>
+        <button class="perm-banner-btn nodrag" id="perm-banner-btn">去授权</button>
+      </div>
+
       <main class="list" id="list">
         <div class="empty" id="empty">正在读取 Kiro 会话…</div>
       </main>
@@ -66,7 +73,30 @@
           <label class="row"><span>监控 <b>Claude Code</b> 会话</span><input type="checkbox" data-cfg="watchClaude" /></label>
           <label class="row"><span><b>极简模式</b>（单行紧凑，可缩到很小）</span><input type="checkbox" data-cfg="compactMode" /></label>
           <label class="row"><span>窗口置顶</span><input type="checkbox" data-cfg="alwaysOnTop" /></label>
-          <div class="hint">重试依赖「辅助功能」权限：系统设置 › 隐私与安全性 › 辅助功能。</div>
+          <hr />
+          <!-- 系统授权 / 能力自检 -->
+          <div class="perm-box">
+            <div class="perm-head">
+              <span><b>系统授权</b>自检</span>
+              <button class="mini-btn nodrag" id="btn-perm-recheck">重新检查</button>
+            </div>
+            <div class="perm-items" id="perm-items"></div>
+            <div class="hint">
+              一键重试 / 聚焦窗口依赖「辅助功能」权限：系统设置 › 隐私与安全性 › 辅助功能，勾选本应用。仅查看监控状态无需授权。
+            </div>
+          </div>
+          <hr />
+          <!-- 诊断报告：识别不到会话 / 状态不对时，导出结构化报告发给维护者 -->
+          <div class="diag-box">
+            <div class="perm-head"><span><b>诊断报告</b></span>
+              <button class="mini-btn nodrag" id="btn-diag">生成报告</button>
+            </div>
+            <label class="row"><span>包含项目名 / 会话标题</span><input type="checkbox" id="diag-sensitive" /></label>
+            <div class="diag-status" id="diag-status"></div>
+            <div class="hint">
+              识别不到会话 / 状态不对时，点「生成报告」导出一个 JSON 发给我们定位。默认<b>已脱敏</b>（不含真实项目名、标题、路径）；需要精确定位再勾选上面的选项。
+            </div>
+          </div>
           <hr />
           <!-- 局域网访问：手机/平板浏览器全屏查看（只读） -->
           <label class="row"><span><b>局域网访问</b>（手机/平板全屏查看）</span><input type="checkbox" id="lan-toggle" /></label>

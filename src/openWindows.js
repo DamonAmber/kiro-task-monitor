@@ -76,6 +76,44 @@ function readOpenedWindows() {
   return { openFolders, activeFolder };
 }
 
+/**
+ * 统计当前打开的窗口构成（诊断用）：区分单文件夹窗口、多根工作区（.code-workspace / configPath）、
+ * 空窗口。多根工作区目前不参与「打开会话」匹配（本模块只处理 w.folder），是「会话识别不到」的
+ * 已知盲区之一——这个统计能一眼看出用户是不是踩到了它。只读、失败返回 null。
+ */
+function inspectOpenedWindows() {
+  let raw;
+  try {
+    raw = fs.readFileSync(GLOBAL_STORAGE_JSON, 'utf8');
+  } catch {
+    return null;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const ws = data && data.windowsState;
+  if (!ws || typeof ws !== 'object') return null;
+  const opened = Array.isArray(ws.openedWindows) ? ws.openedWindows : [];
+  let folders = 0;
+  let multiRoot = 0;
+  let empty = 0;
+  for (const w of opened) {
+    if (w && w.folder) folders += 1;
+    else if (w && w.workspace) multiRoot += 1; // { workspace: { id, configPath } } = 多根工作区
+    else empty += 1;
+  }
+  return {
+    total: opened.length,
+    folders,
+    multiRoot,
+    empty,
+    hasLastActive: !!(ws.lastActiveWindow && ws.lastActiveWindow.folder),
+  };
+}
+
 /** 建立 工作区文件夹 → state.vscdb 路径 的映射（扫描 workspaceStorage 下各 workspace.json）。 */
 function readWorkspaceDbMap() {
   const map = new Map();
@@ -288,6 +326,7 @@ module.exports = {
   readOpenWindowContextAsync,
   isKiroRunningAsync,
   normFolder,
+  inspectOpenedWindows,
   // 便于测试 / 复用
   readOpenedWindows,
   readWorkspaceDbMap,

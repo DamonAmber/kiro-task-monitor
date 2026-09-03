@@ -116,6 +116,33 @@ body {
   animation: pulse 1.3s infinite;
 }
 
+/* ---------- 本机能力异常横幅 ---------- */
+.perm-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 14px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.perm-banner.hidden {
+  display: none;
+}
+.perm-banner-icon {
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+.perm-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+}
+
 /* ---------- 列表 ---------- */
 .list {
   flex: 1 1 auto;

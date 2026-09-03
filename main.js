@@ -23,6 +23,8 @@ const { scanSessions, compareSessions, STATE } = require('./src/watcher');
 const { scanClaudeSessions, getClaudePidsAsync } = require('./src/claudeWatcher');
 const { readUsage } = require('./src/usage');
 const { readOpenWindowContextAsync } = require('./src/openWindows');
+const { checkPermissions } = require('./src/permissions');
+const { buildReport } = require('./src/diagnostics');
 const { SESSIONS_DIR } = require('./src/kiroPaths');
 const { makeTrayIcon } = require('./src/trayIcon');
 const retry = require('./src/retry');
@@ -35,10 +37,15 @@ let config = null;
 let pollTimer = null;
 let usageTimer = null;
 let winCtxTimer = null;
+let permTimer = null; // 系统授权/能力自检的周期计时器
 let sessionsWatcher = null; // fs.watch(SESSIONS_DIR) 句柄
 let watchDebounce = null; // fs.watch 事件去抖计时器
 let lastSessions = [];
 let lastUsage = { ok: false, primary: null, breakdowns: [], timestamp: null };
+// 系统授权/能力自检的最近一次结果（推给浮窗/局域网页面提醒用户去授权）
+let lastPermissions = null;
+// 每次启动只弹一次「缺授权」系统通知，避免刷屏（横幅会常驻提醒）
+const permNotified = { accessibility: false, diskAccess: false };
 // 当前打开的 Kiro 窗口/会话面板上下文（含 kiroRunning）。异步刷新、供 poll 复用，
 // 避免每次轮询都同步 spawn sqlite3（性能）。null 时 scanSessions 降级为不过滤。
 let cachedWinCtx = null;
@@ -155,6 +162,10 @@ function createWindow() {
   win.on('moved', persistBounds);
   win.on('resized', persistBounds);
   win.on('close', persistBounds);
+  // 每次显示浮窗时复查授权（用户常在浮窗提示后去授予，回来即应看到最新状态）
+  win.on('show', () => {
+    if (typeof refreshPermissions === 'function') refreshPermissions();
+  });
 }
 
 /** 切换极简/普通模式：调整最小尺寸并套用该模式记忆的尺寸（无记忆则用默认，保持当前位置）。 */
@@ -454,7 +465,12 @@ function poll() {
   handleTransitions(sessions, now);
   updateTrayTitle(sessions);
   if (win && !win.isDestroyed()) {
-    win.webContents.send('sessions:update', { sessions, config: config.data, usage: lastUsage });
+    win.webContents.send('sessions:update', {
+      sessions,
+      config: config.data,
+      usage: lastUsage,
+      permissions: lastPermissions,
+    });
   }
   broadcastWeb(); // 同步推给局域网浏览器（若已开启）
 }
@@ -551,6 +567,121 @@ function startUsagePolling() {
 }
 
 /* ------------------------------------------------------------------ *
+ * 系统授权 / 能力自检
+ *   启动时先查一次，之后周期性复查（用户可能中途才去授予辅助功能）。
+ *   缺授权时：① 常驻横幅推给浮窗/局域网页面；② 每次启动弹一次系统通知提醒。
+ * ------------------------------------------------------------------ */
+/** 打开 macOS 隐私设置对应面板：辅助功能 / 完全磁盘访问权限。 */
+function openPrivacySettings(which) {
+  const pane =
+    which === 'diskAccess'
+      ? 'Privacy_AllFiles' // 完全磁盘访问权限
+      : 'Privacy_Accessibility'; // 辅助功能（默认）
+  shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
+}
+
+/** 缺授权时弹一次系统通知（每种问题每次启动只弹一次，避免刷屏）。 */
+function maybeNotifyPermission(perm) {
+  if (!perm || !perm.banner || !Notification.isSupported()) return;
+  const { action, text } = perm.banner;
+  if (action === 'diskAccess' && !permNotified.diskAccess) {
+    permNotified.diskAccess = true;
+  } else if (action === 'accessibility' && !permNotified.accessibility) {
+    permNotified.accessibility = true;
+  } else {
+    return; // 该问题本次启动已提醒过
+  }
+  const n = new Notification({
+    title: action === 'diskAccess' ? '需要「完全磁盘访问权限」' : '需要「辅助功能」权限',
+    body: text + '\n点此打开系统设置。',
+    silent: false,
+  });
+  n.on('click', () => openPrivacySettings(action));
+  n.show();
+}
+
+async function refreshPermissions() {
+  let perm;
+  try {
+    perm = await checkPermissions();
+  } catch (e) {
+    console.error('[perm] check failed:', e && e.message);
+    return;
+  }
+  lastPermissions = perm;
+  if (win && !win.isDestroyed()) win.webContents.send('permissions:state', perm);
+  broadcastWeb(); // 局域网页面也能看到授权提示
+  maybeNotifyPermission(perm);
+}
+
+function startPermissionPolling() {
+  if (permTimer) clearInterval(permTimer);
+  // 授权状态变化较慢（用户手动授予），15s 复查一次足够；sqlite3 结果已内部记忆
+  permTimer = setInterval(refreshPermissions, 15000);
+}
+
+/* ------------------------------------------------------------------ *
+ * 诊断报告：一键导出结构化、默认脱敏的 JSON，供用户发给维护者定位问题
+ *   关键：另跑一次「不过滤」的全量扫描做对照，据此解释每个会话为何被显示/隐藏，
+ *   不动热路径（poll 里的 lastSessions 仍是过滤后的结果）。
+ * ------------------------------------------------------------------ */
+async function generateDiagnostics({ includeSensitive } = {}) {
+  const now = Date.now();
+  const activeWithinMs = (config.get('activeWithinHours') || 24) * 3600 * 1000;
+  // 过滤前的 Kiro 会话全集（onlyOpenSessions:false → 只打标不过滤），用来解释隐藏原因
+  const raw = scanSessions({
+    now,
+    activeWithinMs,
+    stuckMs: (config.get('stuckSeconds') || 240) * 1000,
+    toolStuckMs: (config.get('toolStuckSeconds') || 1800) * 1000,
+    stuckDetection: config.get('stuckDetection') !== false,
+    onlyOpenSessions: false,
+    onlyFocusedSession: false,
+    windowContext: cachedWinCtx,
+    kiroRunning: effectiveKiroRunning(),
+  });
+  const shownKeys = new Set(lastSessions.map((s) => s.key));
+  const claudeShown = lastSessions.filter((s) => s.source === 'claude').length;
+
+  let report;
+  try {
+    report = await buildReport({
+      includeSensitive: !!includeSensitive,
+      versions: { app: app.getVersion(), electron: process.versions.electron, node: process.versions.node },
+      config: config.data,
+      permissions: lastPermissions,
+      winCtx: cachedWinCtx,
+      sessionsRaw: raw,
+      shownKeys,
+      claudeShown,
+    });
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  let downloads;
+  try {
+    downloads = app.getPath('downloads');
+  } catch {
+    downloads = app.getPath('home');
+  }
+  const defaultPath = path.join(downloads, `kiro-monitor-diagnostics-${ts}.json`);
+  const { canceled, filePath } = await dialog.showSaveDialog(win || undefined, {
+    title: '保存诊断报告',
+    defaultPath,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(report, null, 2), 'utf8');
+    return { ok: true, path: filePath, redacted: report.redacted };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * 局域网 Web 访问（只读）：起 HTTP+SSE 服务，手机/平板浏览器全屏查看
  * ------------------------------------------------------------------ */
 /** 首次开启时生成访问 PIN 与 cookie 密钥（缺失才生成，保证跨重启稳定）。 */
@@ -590,7 +721,12 @@ async function startWebServer() {
       port: config.get('webPort') || 8787,
       getPin: () => config.get('webPin'),
       getToken: () => config.get('webToken'),
-      getSnapshot: () => ({ sessions: lastSessions, usage: lastUsage, serverTime: Date.now() }),
+      getSnapshot: () => ({
+        sessions: lastSessions,
+        usage: lastUsage,
+        permissions: lastPermissions,
+        serverTime: Date.now(),
+      }),
     });
     webInfo = { running: true, error: '', ...info };
     console.log(
@@ -619,7 +755,12 @@ async function stopWebServer() {
 /** 把当前会话/用量推给所有已连接的局域网客户端（仅在服务运行时）。 */
 function broadcastWeb() {
   if (webInfo.running) {
-    webServer.broadcast({ sessions: lastSessions, usage: lastUsage, serverTime: Date.now() });
+    webServer.broadcast({
+      sessions: lastSessions,
+      usage: lastUsage,
+      permissions: lastPermissions,
+      serverTime: Date.now(),
+    });
   }
 }
 
@@ -728,6 +869,20 @@ function registerIpc() {
   ipcMain.handle('window:hide', () => win && win.hide());
   ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // —— 系统授权 / 能力自检 —— //
+  ipcMain.handle('permissions:get', () => lastPermissions);
+  ipcMain.handle('permissions:recheck', async () => {
+    await refreshPermissions();
+    return lastPermissions;
+  });
+  ipcMain.handle('permissions:openSettings', (_e, which) => {
+    openPrivacySettings(which);
+    return { ok: true };
+  });
+
+  // —— 诊断报告 —— //
+  ipcMain.handle('diagnostics:generate', (_e, opts) => generateDiagnostics(opts || {}));
 
   // —— 更新相关 —— //
   ipcMain.handle('update:state', () => updateState);
@@ -851,10 +1006,12 @@ app.whenReady().then(async () => {
   createTray();
   // 先拿到一次窗口上下文（含 kiroRunning）再开始轮询，避免首帧因无过滤而闪现残留会话
   await refreshWinCtx();
+  await refreshPermissions(); // 先体检一次授权/能力，让首帧就能带上提示
   startPolling();
   startWinCtxPolling(); // ④ 每 8s 异步刷新窗口上下文
   startSessionsWatch(); // ② 会话文件写入即触发轮询
   startUsagePolling();
+  startPermissionPolling(); // 周期复查系统授权（用户可能中途才去授予）
   if (config.get('webEnabled')) startWebServer(); // 上次开启过则自动恢复局域网服务
   setupAutoUpdate();
 
@@ -862,6 +1019,7 @@ app.whenReady().then(async () => {
   powerMonitor.on('resume', () => {
     seeded = false;
     refreshWinCtx().then(poll);
+    refreshPermissions(); // 唤醒后复查授权状态
   });
 
   // 系统深/浅色切换：告警态的彩色图标需按主题重绘（无告警时是模板图，自动适应）

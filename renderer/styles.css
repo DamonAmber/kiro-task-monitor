@@ -108,6 +108,66 @@ body {
   color: var(--text);
 }
 
+/* ---------- 系统授权提醒横幅 ---------- */
+.perm-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 6px 6px 0;
+  border-radius: 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.perm-banner.hidden {
+  display: none;
+}
+.perm-banner.level-warn {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.perm-banner.level-error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.perm-banner-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+.perm-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+}
+.perm-banner-btn {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  align-self: center;
+  background: var(--waiting);
+  color: #1c1c20;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.perm-banner.level-error .perm-banner-btn {
+  background: var(--failed);
+  color: #fff;
+}
+.perm-banner-btn:hover {
+  filter: brightness(1.1);
+}
+/* 极简模式下横幅收窄 */
+#app.compact .perm-banner {
+  font-size: 10.5px;
+  padding: 6px 8px;
+  margin: 4px 4px 0;
+}
+
 /* ---------- 列表 ---------- */
 .list {
   flex: 1 1 auto;
@@ -574,6 +634,99 @@ body {
   min-width: 0;
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* 系统授权自检区 */
+.perm-box {
+  margin: 4px 0 6px;
+}
+.perm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.perm-head b {
+  color: var(--text);
+}
+.perm-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.perm-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--row);
+  font-size: 12px;
+}
+.perm-mark {
+  flex: 0 0 auto;
+  width: 15px;
+  text-align: center;
+  font-weight: 700;
+}
+.perm-item.ok .perm-mark {
+  color: var(--done);
+}
+.perm-item.bad .perm-mark {
+  color: var(--failed);
+}
+.perm-item.unknown .perm-mark {
+  color: var(--idle);
+}
+.perm-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.perm-detail {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.perm-fix {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  background: var(--waiting);
+  color: #1c1c20;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.perm-fix:hover {
+  filter: brightness(1.1);
+}
+
+/* 诊断报告区 */
+.diag-box {
+  margin: 4px 0 6px;
+}
+.diag-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 4px 0 2px;
+  word-break: break-all;
+}
+.diag-status:empty {
+  display: none;
+}
+.diag-status.ok {
+  color: var(--done);
+}
+.diag-status.err {
+  color: var(--failed);
 }
 
 /* 更新区 */

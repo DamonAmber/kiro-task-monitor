@@ -39,6 +39,17 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('update:state', handler);
     return () => ipcRenderer.removeListener('update:state', handler);
   },
+  // 系统授权 / 能力自检：读状态 / 主动复查 / 打开系统设置 / 订阅状态推送
+  getPermissions: () => ipcRenderer.invoke('permissions:get'),
+  recheckPermissions: () => ipcRenderer.invoke('permissions:recheck'),
+  openPermissionSettings: (which) => ipcRenderer.invoke('permissions:openSettings', which),
+  onPermissions: (cb) => {
+    const handler = (_e, state) => cb(state);
+    ipcRenderer.on('permissions:state', handler);
+    return () => ipcRenderer.removeListener('permissions:state', handler);
+  },
+  // 诊断报告：生成并保存为 JSON（{ includeSensitive } → { ok, path } | { canceled } | { error }）
+  generateDiagnostics: (options) => ipcRenderer.invoke('diagnostics:generate', options),
   // 局域网访问：读状态 / 开关 / 改端口 / 换 PIN / 订阅状态推送
   getWebState: () => ipcRenderer.invoke('web:state'),
   setWebEnabled: (enabled) => ipcRenderer.invoke('web:setEnabled', enabled),

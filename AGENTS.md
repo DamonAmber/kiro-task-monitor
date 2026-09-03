@@ -16,6 +16,14 @@ src/
                      判断哪些会话真正打开/聚焦，供 watcher 过滤残留、标注 isFocused
   usage.js           只读 Kiro 全局 state.vscdb 缓存的套餐用量（额度/已用/超额/重置日），
                      主进程每 60s 刷新推给浮窗，底部展示；只读、非实时、读不到即降级不显示
+  permissions.js     系统授权/能力自检：辅助功能(systemPreferences.isTrustedAccessibilityClient(false))、
+                     ~/.kiro/sessions 可读性(区分 ENOENT/EACCES)、sqlite3、storage.json。产出 items[]+banner+
+                     派生标志(canDetectSessions/needsAccessibility/sessionsBlocked)。主进程 15s 复查、启动/唤醒/
+                     窗口显示时复查，缺授权推横幅给浮窗+局域网页并每启动每类弹一次系统通知。全程只读、绝不抛错。
+  diagnostics.js     一键「问题诊断报告」：buildReport() 汇总版本/OS/权限/关键配置/窗口构成(多根工作区检测)/
+                     逐会话结构化事实 + **隐藏原因**(来自 watcher.visibilityDecision 同一真源，结论可信)。
+                     默认脱敏(标题只留 hash+长度、路径 sha8、home→~、权限丢弃绝对 path)，可选 includeSensitive 带真实值。
+                     主进程 generateDiagnostics() 另跑一次 onlyOpenSessions:false 全量扫描做对照，dialog 存 JSON 到 ~/Downloads。
   claudeWatcher.js   只读监控 Claude Code 会话，产出与 watcher 同形状的会话(source:'claude')。
                      只做实测能判准的状态：busy→运行中 / idle→完成 / API错误→失败 / 进程消失→中断。
                      刻意不做重试、不区分「等你授权」（终端 TUI 不落盘）。见下「Claude Code」条。
@@ -54,6 +62,9 @@ electron-builder.yml 打包/签名/公证/发布配置
     1) 工作区窗口开着 → 里面的**活跃会话（running/waiting/failed/stuck）一律显示**，
        无论 Kiro 面板是否已收录、无论静默多久；
     2) 匹配不到打开的窗口 → 仅当「活跃 + 近 30min 有活动」才显示（护栏，滤掉老残留）。
+  这两条规则的判定已抽成纯函数 `watcher.visibilityDecision(s, ctx, opts) → {shown, reason}`，
+  是过滤逻辑的**唯一真源**：`applyOpenWindowFilter` 与 `diagnostics.js`（解释「为何没看到某会话」）共用它，
+  改规则只改这一处，诊断报告的隐藏原因才不会与真实行为漂移。
   另外 `deriveState` 里 `session.json.status ∈ {in_progress, waiting_on_user}` 是**权威判据**：
   当会话很长、当前 turn 的 `turn_start` 已滚出 512KB tail、tail 里只剩旧 `turn_end` 时，
   事件流会「看起来已闭合」，必须以 status 为准判运行/等待，否则会被误判成 done 而从列表消失。

@@ -15,6 +15,10 @@ const usageMainEl = document.getElementById('usage-main');
 const usagePctEl = document.getElementById('usage-pct');
 const usageFillEl = document.getElementById('usage-fill');
 const usageSubEl = document.getElementById('usage-sub');
+const permBannerEl = document.getElementById('perm-banner');
+const permBannerTextEl = document.getElementById('perm-banner-text');
+
+let lastPermissions = null;
 
 const STATE_LABEL = {
   running: '运行中',
@@ -78,7 +82,10 @@ function render() {
   renderCounts();
 
   if (!sessions.length) {
-    emptyEl.textContent = '暂无活跃会话';
+    emptyEl.textContent =
+      lastPermissions && lastPermissions.sessionsBlocked
+        ? '本机无法读取 Kiro 会话数据'
+        : '暂无活跃会话';
     emptyEl.style.display = 'block';
     [...listEl.querySelectorAll('.card')].forEach((n) => n.remove());
     return;
@@ -170,11 +177,26 @@ function renderUsage(u) {
   usageSubEl.textContent = fmtReset(p.resetDate);
 }
 
+/* ---------- 系统授权（只读远端只提示「本机核心能力」问题） ---------- */
+// 辅助功能是本机重试/聚焦才需要的，远端浏览器无从操作，故这里只在
+// 「会话数据读不出来」（sessionsBlocked）时提示，用来解释为什么列表为空。
+function renderPermissions(perm) {
+  lastPermissions = perm || null;
+  if (perm && perm.sessionsBlocked) {
+    permBannerTextEl.textContent =
+      (perm.banner && perm.banner.text) || '本机无法读取 Kiro 会话数据，监控无法工作。';
+    permBannerEl.classList.remove('hidden');
+  } else {
+    permBannerEl.classList.add('hidden');
+  }
+}
+
 /* ---------- 数据流 ---------- */
 function applyPayload(payload) {
   if (!payload) return;
   sessions = payload.sessions || [];
   receivedAt = Date.now();
+  if ('permissions' in payload) renderPermissions(payload.permissions);
   render();
   renderUsage(payload.usage);
 }

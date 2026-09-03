@@ -6,6 +6,8 @@ const emptyEl = document.getElementById('empty');
 const countsEl = document.getElementById('counts');
 const settingsEl = document.getElementById('settings');
 
+let lastPermissions = null; // 最近一次系统授权/能力自检结果
+
 let compact = false;
 function applyCompact() {
   if (appEl) appEl.classList.toggle('compact', compact);
@@ -54,7 +56,7 @@ function render(sessions) {
     : '';
 
   if (!sessions.length) {
-    emptyEl.textContent = '暂无活跃会话';
+    emptyEl.textContent = emptyStateText();
     emptyEl.style.display = 'block';
     // 移除旧卡片
     [...listEl.querySelectorAll('.card')].forEach((n) => n.remove());
@@ -107,6 +109,130 @@ function render(sessions) {
   // 用一个容器替换，避免闪烁：整体重建
   [...listEl.querySelectorAll('.card')].forEach((n) => n.remove());
   emptyEl.insertAdjacentHTML('afterend', html);
+}
+
+// 空态文案：会话数据读不出来时给出可操作的原因，否则就是普通的「暂无活跃会话」
+function emptyStateText() {
+  const p = lastPermissions;
+  if (p && p.sessionsBlocked) return '无法读取 Kiro 会话数据 · 见下方授权提示';
+  if (p && p.sessionsDir && !p.sessionsDir.ok && p.sessionsDir.error === 'ENOENT') {
+    return '未找到 Kiro 会话数据（Kiro 运行过吗？）';
+  }
+  return '暂无活跃会话';
+}
+
+/* ---------- 系统授权 / 能力自检 ---------- */
+const permBanner = document.getElementById('perm-banner');
+const permBannerIcon = document.getElementById('perm-banner-icon');
+const permBannerText = document.getElementById('perm-banner-text');
+const permBannerBtn = document.getElementById('perm-banner-btn');
+const permItemsEl = document.getElementById('perm-items');
+
+function renderPermissions(perm) {
+  if (!perm) return;
+  lastPermissions = perm;
+
+  // —— 顶部横幅：仅在有阻塞问题时显示 —— //
+  const b = perm.banner;
+  if (b) {
+    permBanner.classList.remove('hidden', 'level-warn', 'level-error');
+    permBanner.classList.add(b.level === 'error' ? 'level-error' : 'level-warn');
+    permBannerIcon.textContent = b.level === 'error' ? '⛔️' : '⚠️';
+    permBannerText.textContent = b.text;
+    permBannerBtn.dataset.action = b.action || 'accessibility';
+  } else {
+    permBanner.classList.add('hidden');
+  }
+
+  // —— 设置面板里的逐项自检 —— //
+  if (permItemsEl) {
+    permItemsEl.innerHTML = (perm.items || [])
+      .map((it) => {
+        const mark = it.ok ? '✓' : it.unknown ? '—' : '✕';
+        const cls = it.ok ? 'ok' : it.unknown ? 'unknown' : 'bad';
+        const btn =
+          !it.ok && !it.unknown && it.canOpenSettings
+            ? `<button class="perm-fix nodrag" data-action="accessibility">去授权</button>`
+            : '';
+        return `
+        <div class="perm-item ${cls}">
+          <span class="perm-mark">${mark}</span>
+          <span class="perm-label">${esc(it.label)}</span>
+          ${btn}
+          <div class="perm-detail">${esc(it.detail || '')}</div>
+        </div>`;
+      })
+      .join('');
+  }
+
+  // 空态文案可能依赖授权结果，会话为空时刷新一下
+  if (!currentSessions.length) {
+    emptyEl.textContent = emptyStateText();
+  }
+}
+
+// 横幅按钮：打开对应系统设置面板后主动复查一次
+permBannerBtn.addEventListener('click', async () => {
+  const action = permBannerBtn.dataset.action || 'accessibility';
+  await window.api.openPermissionSettings(action);
+  setTimeout(() => window.api.recheckPermissions(), 800);
+});
+// 设置面板里的「去授权」按钮（事件委托）
+if (permItemsEl) {
+  permItemsEl.addEventListener('click', async (e) => {
+    const fix = e.target.closest('.perm-fix');
+    if (!fix) return;
+    await window.api.openPermissionSettings(fix.dataset.action || 'accessibility');
+    setTimeout(() => window.api.recheckPermissions(), 800);
+  });
+}
+const btnPermRecheck = document.getElementById('btn-perm-recheck');
+if (btnPermRecheck) {
+  btnPermRecheck.addEventListener('click', async () => {
+    btnPermRecheck.disabled = true;
+    btnPermRecheck.textContent = '检查中…';
+    try {
+      const st = await window.api.recheckPermissions();
+      renderPermissions(st);
+    } catch {}
+    btnPermRecheck.textContent = '重新检查';
+    btnPermRecheck.disabled = false;
+  });
+}
+window.api.onPermissions((st) => renderPermissions(st));
+
+/* ---------- 诊断报告 ---------- */
+const btnDiag = document.getElementById('btn-diag');
+const diagStatusEl = document.getElementById('diag-status');
+const diagSensitiveEl = document.getElementById('diag-sensitive');
+if (btnDiag) {
+  btnDiag.addEventListener('click', async () => {
+    btnDiag.disabled = true;
+    btnDiag.textContent = '生成中…';
+    if (diagStatusEl) {
+      diagStatusEl.classList.remove('ok', 'err');
+      diagStatusEl.textContent = '';
+    }
+    try {
+      const r = await window.api.generateDiagnostics({
+        includeSensitive: !!(diagSensitiveEl && diagSensitiveEl.checked),
+      });
+      if (r && r.ok) {
+        diagStatusEl.classList.add('ok');
+        diagStatusEl.textContent = `已保存${r.redacted ? '（已脱敏）' : '（含项目名/标题）'}：${r.path}`;
+      } else if (r && r.canceled) {
+        diagStatusEl.textContent = '已取消';
+      } else {
+        diagStatusEl.classList.add('err');
+        diagStatusEl.textContent = `生成失败：${(r && r.error) || '未知错误'}`;
+      }
+    } catch (e) {
+      diagStatusEl.classList.add('err');
+      diagStatusEl.textContent = '生成失败';
+    }
+    btnDiag.textContent = '生成报告';
+    btnDiag.disabled = false;
+  });
 }
 
 /* ---------- 交互 ---------- */
@@ -400,7 +526,8 @@ window.api.onUsage((usage) => {
 });
 
 /* ---------- 数据流 ---------- */
-window.api.onSessions(({ sessions, config, usage }) => {
+window.api.onSessions(({ sessions, config, usage, permissions }) => {
+  if (permissions) renderPermissions(permissions); // 先更新授权状态，空态文案才准
   render(sessions || []);
   if (config && 'showUsage' in config) showUsage = !!config.showUsage;
   if (config && 'compactMode' in config) {
@@ -435,6 +562,11 @@ window.api.onSessions(({ sessions, config, usage }) => {
       applyCompact();
     });
   }
+  // 先拿授权自检结果，空态/横幅首帧就准确
+  try {
+    const perm = await window.api.getPermissions();
+    if (perm) renderPermissions(perm);
+  } catch {}
   const { sessions, usage } = await window.api.getSessions();
   render(sessions || []);
   if (usage) lastUsage = usage;

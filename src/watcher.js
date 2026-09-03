@@ -432,35 +432,47 @@ function applyOpenWindowFilter(sessions, opts = {}) {
 
   if (!onlyOpen || !ctx || !ctx.ok) return sessions; // 降级：不过滤
 
-  // 「活跃 / 需要你处理」的会话：运行中 · 等待你 · 出错 · 卡住。
-  const ATTENTION = new Set([STATE.RUNNING, STATE.WAITING, STATE.FAILED, STATE.STUCK]);
-  const isActive = (s) => ATTENTION.has(s.state);
-  // 窗口状态识别不到该会话所属工作区时的护栏：只显示「此刻确实存活」的活跃会话。
-  // 取值放宽到 30min，覆盖「正在跑长工具、长时间无写入」的运行会话（否则会被误当残留隐藏），
-  // 同时仍能滤掉早已结束的老残留。
-  const GRACE_MS = 30 * 60 * 1000;
-  const recentlyActive = (s) => (s.idleMs ?? Infinity) <= GRACE_MS;
+  return sessions.filter((s) => visibilityDecision(s, ctx, { onlyOpen, onlyFocused }).shown);
+}
 
-  return sessions.filter((s) => {
-    const f = normFolder(s.workspacePath);
-    const windowOpen = ctx.openFolders.has(f);
+// 「活跃 / 需要你处理」的会话：运行中 · 等待你 · 出错 · 卡住。
+const ATTENTION_STATES = new Set([STATE.RUNNING, STATE.WAITING, STATE.FAILED, STATE.STUCK]);
+// 窗口状态识别不到该会话所属工作区时的护栏放宽到 30min，覆盖「正在跑长工具、长时间无写入」
+// 的运行会话（否则会被误当残留隐藏），同时仍能滤掉早已结束的老残留。
+const UNMATCHED_GRACE_MS = 30 * 60 * 1000;
 
-    if (windowOpen) {
-      // 窗口就开着 → 不是历史残留。窗口里的**活跃会话一律显示**，无论 Kiro 的面板记录
-      // 是否已收录它、也无论静默多久（Kiro 的窗口/面板状态是周期性落盘、会滞后的，
-      // 刚打开 App 时正在跑的会话常常还没被写进面板列表——这是用户反馈的另一主因）。
-      if (isActive(s)) return true;
-      const panels = ctx.panelsByFolder.get(f);
-      if (!panels || !panels.readable) return true; // 面板未知 → 保守保留
-      if (onlyFocused) return !!s.id && s.id === panels.focused;
-      return !!s.id && panels.ids.has(s.id);
+/**
+ * 判定单个会话在「只显示已打开会话」模式下是否应显示，并给出原因（供诊断报告解释「为什么没看到」）。
+ * 这是 applyOpenWindowFilter 过滤规则的**唯一真源**——两处共用，保证诊断结论与真实行为一致。
+ * @returns {{shown:boolean, reason:string}} reason 取值见下方注释
+ */
+function visibilityDecision(s, ctx, { onlyOpen = true, onlyFocused = false } = {}) {
+  if (!onlyOpen || !ctx || !ctx.ok) return { shown: true, reason: 'no-filter' }; // 降级：不过滤
+  const isActive = ATTENTION_STATES.has(s.state);
+  const f = normFolder(s.workspacePath);
+  const windowOpen = ctx.openFolders.has(f);
+
+  if (windowOpen) {
+    // 窗口就开着 → 不是历史残留。窗口里的**活跃会话一律显示**，无论面板是否已收录、静默多久
+    // （Kiro 的窗口/面板状态周期性落盘、会滞后；刚打开 App 时正在跑的会话常还没写进面板列表）。
+    if (isActive) return { shown: true, reason: 'window-open-active' };
+    const panels = ctx.panelsByFolder.get(f);
+    if (!panels || !panels.readable) return { shown: true, reason: 'window-open-panels-unknown' };
+    if (onlyFocused) {
+      return s.id && s.id === panels.focused
+        ? { shown: true, reason: 'focused' }
+        : { shown: false, reason: 'not-focused' }; // 开了「只看当前会话」，此会话非聚焦标签
     }
+    return s.id && panels.ids.has(s.id)
+      ? { shown: true, reason: 'in-panels' }
+      : { shown: false, reason: 'not-in-panels' }; // 窗口开着但不在该窗口的会话面板列表里
+  }
 
-    // 该会话工作区没匹配到打开的窗口：可能是历史残留，也可能是窗口状态读取滞后 /
-    // 多根工作区 / 路径不匹配等。仅当会话此刻确实存活（活跃状态 + 近期有活动）才显示，
-    // 兼顾「过滤残留」与「绝不漏掉正在跑的会话」。
-    return isActive(s) && recentlyActive(s);
-  });
+  // 工作区没匹配到打开的窗口：历史残留，或窗口状态滞后 / 多根工作区 / 路径不匹配。
+  const recentlyActive = (s.idleMs ?? Infinity) <= UNMATCHED_GRACE_MS;
+  if (isActive && recentlyActive) return { shown: true, reason: 'unmatched-but-active-recent' };
+  if (isActive && !recentlyActive) return { shown: false, reason: 'unmatched-active-stale' }; // 活跃但静默超 30min
+  return { shown: false, reason: 'unmatched-inactive' }; // 未匹配窗口且非活跃 → 判为历史残留
 }
 
 // 会话排序比较器（Kiro 与 Claude 合并后统一重排也用它）：
@@ -596,4 +608,5 @@ module.exports = {
   tailJsonLines,
   listSessionDirs,
   applyOpenWindowFilter,
+  visibilityDecision,
 };

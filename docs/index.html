@@ -296,6 +296,7 @@
           <div class="feat"><span class="ic">🔴</span><h3>出错一键重试</h3><p>会话因报错停下时高亮告警，点一下就把「继续」发回对应窗口。</p></div>
           <div class="feat"><span class="ic">🟣</span><h3>卡死兜底</h3><p>运行中却长时间无动静，判定疑似卡住并提醒，避免白等。</p></div>
           <div class="feat"><span class="ic">🎯</span><h3>只盯打开的会话</h3><p>跨多个窗口，只显示你当前真正打开着的会话，还标出每个窗口「当前」聚焦的那个，不被旧会话刷屏。</p></div>
+          <div class="feat"><span class="ic">🔐</span><h3>授权自检提醒</h3><p>启动自动检查一键重试 / 聚焦所需的「辅助功能」授权。缺了就在浮窗顶部提醒，点「去授权」直达系统设置，不再对着没反应的按钮发愁。</p></div>
           <div class="feat"><span class="ic">💳</span><h3>套餐用量一眼看</h3><p>浮窗底部一条进度条，随时看清套餐额度用了多少、还剩多少、几天后重置；接近上限变黄、超额变红。</p></div>
           <div class="feat"><span class="ic">🧩</span><h3>也监控 Claude Code</h3><p>同一个浮窗里顺带盯住 Claude Code 会话：运行中 / 完成 / 失败 / 中断，用来源色片和 Kiro 一眼区分（只读展示）。</p></div>
           <div class="feat"><span class="ic">📱</span><h3>手机 / 平板全屏看</h3><p>开启「局域网访问」，同一 Wi-Fi 下用手机或平板浏览器输入 PIN 即可全屏查看所有会话状态，横竖屏自适应——把一台闲置设备立成你的任务看板。</p></div>
@@ -357,13 +358,21 @@
             <p>在设置里打开「局域网访问」，会显示一个网址和 6 位 PIN。用同一 Wi-Fi 下的 iPhone / iPad 浏览器打开该网址、输入 PIN 即可实时查看；在 Safari「添加到主屏幕」后能全屏、横竖屏自适应，把闲置设备变成专属任务看板（只读）。</p>
           </div>
           <div class="feat">
+            <span class="ic">🔐</span><h3>授权自检</h3>
+            <p>启动就会检查一键重试 / 聚焦窗口所需的「辅助功能」授权是否到位。没授权时浮窗顶部会弹一条提醒，点「去授权」直接跳到系统设置；授予后回到浮窗自动复查。设置里也能随时查看各项自检结果。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">🩺</span><h3>一键诊断</h3>
+            <p>万一识别不到会话或状态不对，设置里点「生成报告」就能导出一份 JSON 发给我们排查。默认已脱敏，不含真实项目名和任务标题。</p>
+          </div>
+          <div class="feat">
             <span class="ic">⚙️</span><h3>按需设置</h3>
             <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容，选择「只显示已打开的会话」、开关套餐用量显示，还能手动检查更新、一键重启升级。</p>
           </div>
         </div>
         <div class="note">
-          🔐 首次点「重试」时，macOS 会请求「辅助功能」与「自动化（控制 Kiro）」权限，允许一次即可
-          （仅查看状态与接收通知无需任何权限）。
+          🔐 一键重试 / 聚焦窗口需要 macOS「辅助功能」（及「自动化（控制 Kiro）」）权限，允许一次即可。
+          没授权时浮窗会主动提醒你去开。仅查看状态与接收通知无需任何权限。
         </div>
       </div>
     </section>
@@ -374,6 +383,13 @@
         <h2 class="section-title">更新日志</h2>
         <p class="section-sub">下载按钮始终指向最新版；升级后自动生效</p>
         <div class="changelog">
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.9.0</span></div>
+            <div class="cl-body">
+              <span class="cl-new">新增</span><b>系统授权自检</b>：启动即自动检查「辅助功能」等所需授权是否到位，缺了会在浮窗顶部弹出提醒并附「去授权」按钮，一键跳到对应系统设置；设置里也能随时查看各项自检结果并重新检查。<br />
+              <span class="cl-new">新增</span><b>一键诊断报告</b>：遇到「识别不到会话 / 状态不对」时，在设置里点「生成报告」导出一个 JSON 发给我们定位。默认已脱敏（不含真实项目名、标题、路径），放心分享。
+            </div>
+          </div>
           <div class="cl-item">
             <div class="cl-ver"><span class="tag">v0.8.1</span></div>
             <div class="cl-body">修复局域网访问在多网卡环境下可能显示打不开的网址的问题——现在会列出全部可用网址并标出哪个是 Wi-Fi，方便手机选对。</div>
