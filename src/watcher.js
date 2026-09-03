@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { SESSIONS_DIR } = require('./kiroPaths');
 const { readOpenWindowContext, normFolder } = require('./openWindows');
+const { findSessionDirs } = require('./kiroLayout');
 
 /* ------------------------------------------------------------------ *
  * 状态常量
@@ -347,14 +348,31 @@ function deriveState(meta, lines, mtimeMs, now, opts) {
  * 扫描全部会话
  * ------------------------------------------------------------------ */
 
-/** 列出所有 session.json 路径（sessions/<hash>/<sessionId>/session.json）。 */
+/** 由「含 session.json 的目录」构造一条会话记录（workspaceHash 取父目录名，仅信息用）。 */
+function makeSessionEntry(dir) {
+  const sessionJson = path.join(dir, 'session.json');
+  const messages = path.join(dir, 'messages.jsonl');
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(sessionJson).mtimeMs;
+  } catch {
+    return null; // 没有 session.json，跳过
+  }
+  return { dir, sessionJson, messages, workspaceHash: path.basename(path.dirname(dir)), mtimeMs };
+}
+
+/**
+ * 列出所有会话目录（默认 sessions/<hash>/<sessionId>/session.json）。
+ * 若默认路径拿不到任何会话（目录不存在/为空——已知不同 Kiro 版本会把会话挪到 ~/.kiro 下别处），
+ * 回退为在 ~/.kiro 下有界搜索含 session.json 的目录，自动适配布局差异。
+ */
 function listSessionDirs() {
   const result = [];
-  let hashDirs;
+  let hashDirs = [];
   try {
     hashDirs = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true });
   } catch {
-    return result;
+    hashDirs = []; // 默认目录不存在 → 走下方回退
   }
   for (const h of hashDirs) {
     if (!h.isDirectory()) continue;
@@ -367,16 +385,16 @@ function listSessionDirs() {
     }
     for (const s of sessDirs) {
       if (!s.isDirectory()) continue;
-      const dir = path.join(hashPath, s.name);
-      const sessionJson = path.join(dir, 'session.json');
-      const messages = path.join(dir, 'messages.jsonl');
-      let mtimeMs = 0;
-      try {
-        mtimeMs = fs.statSync(sessionJson).mtimeMs;
-      } catch {
-        continue; // 没有 session.json，跳过
-      }
-      result.push({ dir, sessionJson, messages, workspaceHash: h.name, mtimeMs });
+      const entry = makeSessionEntry(path.join(hashPath, s.name));
+      if (entry) result.push(entry);
+    }
+  }
+
+  // 回退：默认路径下一个会话都没有 → 在 ~/.kiro 下发现会话目录（适配布局变化）。
+  if (result.length === 0) {
+    for (const dir of findSessionDirs()) {
+      const entry = makeSessionEntry(dir);
+      if (entry) result.push(entry);
     }
   }
   return result;

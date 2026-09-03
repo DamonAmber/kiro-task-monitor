@@ -19,7 +19,13 @@ const { execFile } = require('child_process');
 
 const { STATE, visibilityDecision } = require('./watcher');
 const { inspectOpenedWindows, normFolder } = require('./openWindows');
-const { SESSIONS_DIR, GLOBAL_STORAGE_JSON } = require('./kiroPaths');
+const { SESSIONS_DIR, GLOBAL_STORAGE_JSON, KIRO_DIR } = require('./kiroPaths');
+const {
+  findSessionDirs,
+  inspectKiroDir,
+  summarizeSessionIndex,
+  probeGlobalStorageEntries,
+} = require('./kiroLayout');
 const fs = require('fs');
 
 /** 稳定短哈希：同一输入永远得到同一 8 位十六进制，便于跨会话/跨字段对应，又不泄露原文。 */
@@ -48,6 +54,52 @@ function tildify(p, sensitive) {
   if (sensitive) return p;
   const home = os.homedir();
   return p.startsWith(home) ? '~' + p.slice(home.length) : p;
+}
+
+/** 把绝对会话目录转成相对 ~/.kiro 的**结构模式**：hash/uuid 段替换成占位符，只暴露布局形状。 */
+function relPattern(dir, sensitive) {
+  let rel = dir;
+  if (dir.startsWith(KIRO_DIR)) rel = '~/.kiro' + dir.slice(KIRO_DIR.length);
+  if (sensitive) return rel;
+  return rel
+    .split('/')
+    .map((seg) => {
+      if (/^[0-9a-f]{8,}$/i.test(seg)) return '<hash>';
+      if (/^sess[_-]/i.test(seg) || /[0-9a-f]{8}-[0-9a-f]{4}-/i.test(seg)) return '<id>';
+      return seg;
+    })
+    .join('/');
+}
+
+/** 探测 ~/.kiro 布局：顶层条目、会话目录搜索结果、session-index、globalStorage（供如实定位会话去哪了）。 */
+function probeKiroLayout(sensitive) {
+  const kiroDir = inspectKiroDir();
+  let found = [];
+  try {
+    found = findSessionDirs({ force: true });
+  } catch {
+    found = [];
+  }
+  const seen = new Set();
+  const patterns = [];
+  for (const d of found) {
+    const p = relPattern(d, sensitive);
+    // 脱敏模式下按「结构形状」去重，只保留不同的布局形状（最多 8 种）；敏感模式按真实路径去重
+    const dedupeKey = sensitive ? d : p;
+    if (!seen.has(dedupeKey)) {
+      seen.add(dedupeKey);
+      if (patterns.length < 8) patterns.push(p);
+    }
+  }
+  return {
+    kiroDir: '~/.kiro',
+    kiroDirExists: kiroDir.exists,
+    topEntries: kiroDir.entries.map((e) => (e.dir ? e.name + '/' : e.name)),
+    sessionDirsFound: found.length,
+    sessionDirPatterns: patterns,
+    sessionIndex: summarizeSessionIndex(),
+    globalStorageEntries: probeGlobalStorageEntries(),
+  };
 }
 
 function run(cmd, args, timeout = 2500) {
@@ -192,6 +244,7 @@ async function buildReport(o = {}) {
 
   const winSummary = summarizeWinCtx(winCtx, sensitive);
   const opened = inspectOpenedWindows(); // 打开窗口构成（多根工作区检测）
+  const kiroLayout = probeKiroLayout(sensitive); // ~/.kiro 真实布局（定位会话去哪了）
 
   // —— 人类可读要点（放最前，方便一眼看懂） —— //
   const summary = [];
@@ -215,6 +268,30 @@ async function buildReport(o = {}) {
   } else if (!winSummary.ok) {
     summary.push('打开的窗口: 读不到（storage.json 不可读）→ 已降级为不过滤');
   }
+  // ~/.kiro 布局：会话找不到时这是头号线索
+  if (!kiroLayout.kiroDirExists) {
+    summary.push('~/.kiro: 不存在（这台机器上 Kiro 数据目录都没有？）');
+  } else {
+    let layoutLine = `~/.kiro: 存在，顶层 [${(kiroLayout.topEntries || []).join(', ')}]`;
+    summary.push(layoutLine);
+    if (kiroLayout.sessionDirsFound > 0) {
+      summary.push(
+        `会话目录搜索: 在 ~/.kiro 下发现 ${kiroLayout.sessionDirsFound} 个（形状: ${(kiroLayout.sessionDirPatterns || []).join(' · ') || '—'}）`
+      );
+    } else {
+      summary.push('会话目录搜索: 在 ~/.kiro 下未发现任何 session.json —— 会话可能不在 ~/.kiro，或尚未产生');
+    }
+    const si = kiroLayout.sessionIndex;
+    if (si && si.exists) {
+      summary.push(
+        `session-index: ${si.jsonlCount} 个索引文件、引用 ${si.referencedCount} 个会话；首个引用能否在 sessions/ 下解析: ${si.firstResolvesUnderSessions}`
+      );
+    }
+    if (kiroLayout.globalStorageEntries) {
+      summary.push(`globalStorage 顶层: [${kiroLayout.globalStorageEntries.join(', ')}]`);
+    }
+  }
+
   const hiddenTotal = raw.length - shownCount;
   let scanLine = `Kiro 会话: 扫描到 ${raw.length}，规则判定显示 ${shownCount}，隐藏 ${hiddenTotal}`;
   if (hiddenTotal > 0) {
@@ -257,6 +334,7 @@ async function buildReport(o = {}) {
     },
     permissions: redactPermissions(perm, sensitive),
     config: cfg,
+    kiroLayout, // ~/.kiro 真实布局：顶层条目 / 会话目录搜索 / session-index / globalStorage
     openedWindows: opened, // {total, folders, multiRoot, empty, hasLastActive} | null
     windowContext: winSummary,
     filtering: {

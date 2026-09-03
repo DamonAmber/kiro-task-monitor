@@ -181,6 +181,7 @@ src/
   webServer.js       局域网只读 Web 服务（HTTP + SSE，PIN 鉴权）→ 手机/平板浏览器全屏查看
   config.js          配置读写
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据路径
+  kiroLayout.js      会话目录发现/布局探测（默认路径拿不到会话时在 ~/.kiro 下有界搜索，适配版本布局差异）
 renderer/            浮窗界面（HTML / CSS / JS）
 webui/               局域网访问的响应式网页（登录页 + 应用页 + PWA manifest，横竖屏自适应）
 build/

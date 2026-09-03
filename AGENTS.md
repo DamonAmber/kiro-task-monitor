@@ -32,6 +32,10 @@ src/
   retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底
   config.js          配置读写（userData/config.json）
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据（Application Support/Kiro）路径
+  kiroLayout.js      会话目录发现 + 布局探测。findSessionDirs()：默认 ~/.kiro/sessions 拿不到会话时（不同 Kiro
+                     版本会把会话挪走，用户实测出现过 sessions 整个不存在）在 ~/.kiro 下有界搜索含 session.json 的
+                     目录（跳过 logs/cache/extensions/snapshots 等，深度≤5、访问上限、15s TTL 缓存）。
+                     inspectKiroDir/summarizeSessionIndex/probeGlobalStorageEntries 供诊断如实呈现真实布局。
 renderer/            浮窗 UI（index.html / styles.css / renderer.js）
 tools/
   watch-cli.js       无界面终端版监控（不启动 Electron，最快的调试/验证入口）
@@ -42,6 +46,9 @@ electron-builder.yml 打包/签名/公证/发布配置
 
 ## 状态判定：数据来源（改 watcher 前必读）
 工具**只读**本地文件、绝不写入 Kiro 的任何数据。信号来自：
+- **会话目录的定位不再写死**：默认 `~/.kiro/sessions/<hash>/<id>/`；`listSessionDirs` 若在默认路径一个会话都拿不到，
+  回退到 `kiroLayout.findSessionDirs()` 在 `~/.kiro` 下有界搜索含 `session.json` 的目录（不同 Kiro 版本会把会话挪走，
+  用户实测出现过 `~/.kiro/sessions` 整个不存在却在跑 Kiro）。改扫描逻辑前务必知道这条回退，别退回写死路径。
 - `~/.kiro/sessions/<workspaceHash>/<sessionId>/session.json`
   → `title` / `workspacePaths` / `status`(`in_progress|failed|completed|waiting_on_user|idle`) / `modelId`
 - 同目录 `messages.jsonl`（逐行 `{id,timestamp,payload}`），关键 `payload.type`：
