@@ -19,6 +19,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 
 同时还能**只读监控 Claude Code 会话**（运行中 / 完成 / 失败 / 中断），在同一浮窗里用来源色片（<code>Kiro</code> 蓝 / <code>Claude</code> 橙）区分。Claude 会话只做展示、不提供一键重试（终端无法可靠定位与注入）。
 
+还支持 📱 **局域网访问**：在设置里开启后，同一 Wi-Fi 下的手机 / 平板 / 另一台电脑用浏览器输入 PIN 即可全屏查看所有会话状态（横竖屏自适应），适合把一台闲置设备立成任务看板——只读、用 PIN 保护。
+
 解决的痛点：Kiro 任务执行久、经常因各种原因中断需要手动回复「继续」，但你不盯着就不知道它什么时候完成或失败，导致重试不及时、浪费时间。
 
 ---
@@ -144,6 +146,7 @@ npm run watch:once   # 只扫描打印一次
 | 底部显示**套餐用量** | 浮窗底部显示 Kiro 套餐额度剩余 / 已用百分比 / 超额 / 重置倒计时 | 开 |
 | 监控 **Claude Code** 会话 | 同时只读监控 Claude Code 会话（运行/完成/失败/中断），来源色片区分 | 开 |
 | **极简模式** | 单行紧凑卡片、隐藏次要信息（来源改用左边框色区分），窗口可缩到很小；普通/极简两种尺寸各自记忆 | 关 |
+| **局域网访问** | 开启后起一个只读 Web 服务，手机 / 平板浏览器输入 PIN 即可全屏查看（横竖屏自适应）；显示访问网址与 PIN，可随时「换一个」 | 关 |
 | 窗口置顶 | 浮窗始终置顶 | 开 |
 
 配置保存在 `~/Library/Application Support/kiro-task-monitor/config.json`。
@@ -171,9 +174,11 @@ src/
   claudeWatcher.js   只读监控 Claude Code 会话（~/.claude sessions + transcript + pgrep）
   trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标（深浅色菜单栏自适应）
   retry.js           一键重试 / 聚焦窗口（kiro CLI 优先，AppleScript 兜底）
+  webServer.js       局域网只读 Web 服务（HTTP + SSE，PIN 鉴权）→ 手机/平板浏览器全屏查看
   config.js          配置读写
   kiroPaths.js       ~/.kiro 与 Kiro 应用数据路径
 renderer/            浮窗界面（HTML / CSS / JS）
+webui/               局域网访问的响应式网页（登录页 + 应用页 + PWA manifest，横竖屏自适应）
 build/
   icon.png           app 图标源（electron-builder 自动转 .icns）
   entitlements.mac.plist  硬化运行时权限（公证所需）

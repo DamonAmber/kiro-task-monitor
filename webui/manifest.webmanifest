@@ -1,0 +1,15 @@
+{
+  "name": "Kiro 任务监控",
+  "short_name": "Kiro 监控",
+  "description": "实时查看本机所有 Kiro / Claude Code 会话任务状态",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#131316",
+  "theme_color": "#1c1c20",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

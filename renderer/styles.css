@@ -495,6 +495,47 @@ body {
   line-height: 1.5;
   margin: 8px 0;
 }
+/* 局域网访问区 */
+.lan-box {
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--row);
+}
+.lan-box.hidden {
+  display: none;
+}
+.lan-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.lan-k {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.lan-v {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lan-v.lan-pin {
+  letter-spacing: 2px;
+  color: var(--running);
+  flex: 0 0 auto;
+}
+.lan-v.lan-fail {
+  color: var(--failed);
+}
+
 /* 更新区 */
 .update-box {
   margin: 6px 0 10px;

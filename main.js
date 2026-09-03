@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const {
   app,
@@ -26,6 +27,7 @@ const { SESSIONS_DIR } = require('./src/kiroPaths');
 const { makeTrayIcon } = require('./src/trayIcon');
 const retry = require('./src/retry');
 const { Config } = require('./src/config');
+const webServer = require('./src/webServer');
 
 let tray = null;
 let win = null;
@@ -47,6 +49,8 @@ let kiroDownSince = 0; // Kiro 首次被判定为「未运行」的时刻（0=�
 // 避免 pgrep 偶发漏读把运行中的会话瞬间错标为「已中断」。
 const KIRO_DOWN_CONFIRM_MS = 20 * 1000;
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
+// 局域网 Web 服务运行态（供设置面板展示网址/端口/错误）
+let webInfo = { running: false, port: 0, ip: '', urls: [], error: '' };
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
 let updateState = { status: 'idle', current: '', latest: '', progress: 0, error: '', readOnly: false };
@@ -452,6 +456,7 @@ function poll() {
   if (win && !win.isDestroyed()) {
     win.webContents.send('sessions:update', { sessions, config: config.data, usage: lastUsage });
   }
+  broadcastWeb(); // 同步推给局域网浏览器（若已开启）
 }
 
 function startPolling() {
@@ -536,12 +541,77 @@ function refreshUsage() {
     return;
   }
   if (win && !win.isDestroyed()) win.webContents.send('usage:update', lastUsage);
+  broadcastWeb(); // 用量刷新也推给局域网浏览器
 }
 
 function startUsagePolling() {
   if (usageTimer) clearInterval(usageTimer);
   refreshUsage();
   usageTimer = setInterval(refreshUsage, config.get('usagePollMs') || 60000);
+}
+
+/* ------------------------------------------------------------------ *
+ * 局域网 Web 访问（只读）：起 HTTP+SSE 服务，手机/平板浏览器全屏查看
+ * ------------------------------------------------------------------ */
+/** 首次开启时生成访问 PIN 与 cookie 密钥（缺失才生成，保证跨重启稳定）。 */
+function ensureWebSecrets() {
+  const patch = {};
+  if (!config.get('webPin')) patch.webPin = String(Math.floor(100000 + Math.random() * 900000));
+  if (!config.get('webToken')) patch.webToken = crypto.randomBytes(24).toString('hex');
+  if (Object.keys(patch).length) config.set(patch);
+}
+
+function getWebState() {
+  return {
+    enabled: !!config.get('webEnabled'),
+    running: !!webInfo.running,
+    port: webInfo.port || config.get('webPort') || 8787,
+    ip: webInfo.ip || '',
+    urls: webInfo.urls || [],
+    pin: config.get('webPin') || '',
+    error: webInfo.error || '',
+  };
+}
+
+function pushWebState() {
+  if (win && !win.isDestroyed()) win.webContents.send('web:state', getWebState());
+}
+
+async function startWebServer() {
+  ensureWebSecrets();
+  try {
+    const info = await webServer.start({
+      port: config.get('webPort') || 8787,
+      getPin: () => config.get('webPin'),
+      getToken: () => config.get('webToken'),
+      getSnapshot: () => ({ sessions: lastSessions, usage: lastUsage, serverTime: Date.now() }),
+    });
+    webInfo = { running: true, error: '', ...info };
+    console.log('[web] 局域网服务已启动:', (info.urls || []).join(' '));
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    console.error('[web] 启动失败:', msg);
+    webInfo = { running: false, port: 0, ip: '', urls: [], error: msg };
+  }
+  pushWebState();
+  return webInfo;
+}
+
+async function stopWebServer() {
+  try {
+    await webServer.stop();
+  } catch {
+    /* ignore */
+  }
+  webInfo = { running: false, port: 0, ip: '', urls: [], error: '' };
+  pushWebState();
+}
+
+/** 把当前会话/用量推给所有已连接的局域网客户端（仅在服务运行时）。 */
+function broadcastWeb() {
+  if (webInfo.running) {
+    webServer.broadcast({ sessions: lastSessions, usage: lastUsage, serverTime: Date.now() });
+  }
 }
 
 /**
@@ -674,6 +744,37 @@ function registerIpc() {
   });
   // 只读卷/路径随机化时，一键把 App 移到「应用程序」（成功会自动重启到新位置）
   ipcMain.handle('app:moveToApplications', () => moveToApplications());
+
+  // —— 局域网访问 —— //
+  ipcMain.handle('web:state', () => getWebState());
+  ipcMain.handle('web:setEnabled', async (_e, enabled) => {
+    config.set({ webEnabled: !!enabled });
+    if (enabled) await startWebServer();
+    else await stopWebServer();
+    return getWebState();
+  });
+  ipcMain.handle('web:setPort', async (_e, port) => {
+    const p = Math.max(1024, Math.min(65535, Number(port) || 8787));
+    config.set({ webPort: p });
+    if (config.get('webEnabled')) {
+      await stopWebServer();
+      await startWebServer();
+    }
+    return getWebState();
+  });
+  // 换一个 PIN：同时轮换 cookie 密钥（已登录的设备需重新输入 PIN），并重启服务生效
+  ipcMain.handle('web:regen', async () => {
+    config.set({
+      webPin: String(Math.floor(100000 + Math.random() * 900000)),
+      webToken: crypto.randomBytes(24).toString('hex'),
+    });
+    if (config.get('webEnabled')) {
+      await stopWebServer();
+      await startWebServer();
+    }
+    pushWebState();
+    return getWebState();
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -745,6 +846,7 @@ app.whenReady().then(async () => {
   startWinCtxPolling(); // ④ 每 8s 异步刷新窗口上下文
   startSessionsWatch(); // ② 会话文件写入即触发轮询
   startUsagePolling();
+  if (config.get('webEnabled')) startWebServer(); // 上次开启过则自动恢复局域网服务
   setupAutoUpdate();
 
   // ③ 休眠唤醒：重建通知基线（不对睡眠期间的跳变补发一堆通知），并立即刷新一次
@@ -767,4 +869,13 @@ app.whenReady().then(async () => {
 // 菜单栏应用：平时关闭所有窗口不退出；但为安装更新而退出时放行
 app.on('window-all-closed', (e) => {
   if (!quittingForUpdate) e.preventDefault();
+});
+
+// 退出前关闭局域网服务，释放端口与连接
+app.on('before-quit', () => {
+  try {
+    webServer.stop();
+  } catch {
+    /* ignore */
+  }
 });

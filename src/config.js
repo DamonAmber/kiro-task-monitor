@@ -29,6 +29,13 @@ const DEFAULT_CONFIG = {
 
   compactMode: false, // 极简模式：单行紧凑卡片、隐藏次要信息、窗口可缩到很小
 
+  // 局域网访问：开启后在本机起一个只读 HTTP+SSE 服务，手机/平板/另一台电脑
+  // 可用浏览器全屏查看监控面板（支持横竖屏）。会话标题可能含真实项目名，故用 PIN 鉴权。
+  webEnabled: false, // 是否开启局域网访问
+  webPort: 8787, // 服务端口（被占用会自动向后寻找可用端口）
+  webPin: null, // 6 位访问 PIN（首次开启时随机生成）
+  webToken: null, // PIN 校验通过后写入浏览器 cookie 的密钥（换 PIN 时一并轮换）
+
   bounds: null, // 普通模式浮窗位置/尺寸（记忆）
   compactBounds: null, // 极简模式浮窗位置/尺寸（各自记忆，互不干扰）
   alwaysOnTop: true,

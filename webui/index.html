@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Kiro 任务监控</title>
+    <link rel="stylesheet" href="app.css" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.png" />
+    <meta name="theme-color" content="#1c1c20" />
+    <!-- iOS 全屏（添加到主屏幕后无浏览器边框，随设备横竖屏旋转） -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Kiro 监控" />
+    <link rel="apple-touch-icon" href="icon.png" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="logo">◐</span>
+          <span class="brand">Kiro 任务监控</span>
+        </div>
+        <div class="topbar-right">
+          <span class="counts" id="counts"></span>
+          <span class="conn" id="conn" title="连接状态"><i class="conn-dot"></i><span id="conn-text">连接中…</span></span>
+        </div>
+      </header>
+
+      <main class="list" id="list">
+        <div class="empty" id="empty">正在连接…</div>
+      </main>
+
+      <footer class="usage hidden" id="usage">
+        <div class="usage-head">
+          <span class="usage-main" id="usage-main"></span>
+          <span class="usage-pct" id="usage-pct"></span>
+        </div>
+        <div class="usage-track"><div class="usage-fill" id="usage-fill"></div></div>
+        <div class="usage-sub" id="usage-sub"></div>
+      </footer>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

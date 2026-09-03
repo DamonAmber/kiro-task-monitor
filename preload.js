@@ -39,4 +39,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('update:state', handler);
     return () => ipcRenderer.removeListener('update:state', handler);
   },
+  // 局域网访问：读状态 / 开关 / 改端口 / 换 PIN / 订阅状态推送
+  getWebState: () => ipcRenderer.invoke('web:state'),
+  setWebEnabled: (enabled) => ipcRenderer.invoke('web:setEnabled', enabled),
+  setWebPort: (port) => ipcRenderer.invoke('web:setPort', port),
+  regenWeb: () => ipcRenderer.invoke('web:regen'),
+  onWebState: (cb) => {
+    const handler = (_e, state) => cb(state);
+    ipcRenderer.on('web:state', handler);
+    return () => ipcRenderer.removeListener('web:state', handler);
+  },
 });

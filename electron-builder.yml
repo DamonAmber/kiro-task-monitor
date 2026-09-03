@@ -12,6 +12,7 @@ files:
   - preload.js
   - src/**/*
   - renderer/**/*
+  - webui/**/*
   - package.json
 
 # 产物文件名用纯 ASCII，避免中文/空格在 GitHub Release 资源 URL 与自动更新 feed 里出问题

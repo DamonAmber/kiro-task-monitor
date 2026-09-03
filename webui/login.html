@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Kiro 任务监控 · 登录</title>
+    <link rel="icon" href="icon.png" />
+    <meta name="theme-color" content="#1c1c20" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="icon.png" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        height: 100%;
+        font-family: -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+        background: #1c1c20;
+        color: #f2f2f5;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        gap: 22px;
+      }
+      .logo { font-size: 44px; color: #3b82f6; }
+      .title { font-size: 18px; font-weight: 600; }
+      .sub { font-size: 13px; color: #a1a1aa; text-align: center; line-height: 1.6; max-width: 300px; }
+      form { display: flex; flex-direction: column; gap: 14px; width: min(320px, 86vw); }
+      .pin {
+        width: 100%;
+        text-align: center;
+        letter-spacing: 10px;
+        font-size: 26px;
+        font-weight: 600;
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: #f2f2f5;
+        outline: none;
+      }
+      .pin:focus { border-color: #3b82f6; }
+      .btn {
+        width: 100%;
+        padding: 13px;
+        border: none;
+        border-radius: 12px;
+        background: #3b82f6;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn:active { transform: scale(0.98); }
+      .btn:disabled { opacity: 0.6; }
+      .err { color: #ef4444; font-size: 13px; min-height: 18px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">◐</div>
+      <div class="title">Kiro 任务监控</div>
+      <div class="sub">输入电脑上「设置 › 局域网访问」里显示的 6 位 PIN 即可查看。</div>
+      <form id="form">
+        <input
+          class="pin"
+          id="pin"
+          type="tel"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="6"
+          autocomplete="off"
+          placeholder="••••••"
+          aria-label="访问 PIN"
+        />
+        <button class="btn" id="submit" type="submit">进入</button>
+        <div class="err" id="err"></div>
+      </form>
+    </div>
+    <script>
+      const form = document.getElementById('form');
+      const pin = document.getElementById('pin');
+      const err = document.getElementById('err');
+      const submit = document.getElementById('submit');
+      pin.focus();
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        err.textContent = '';
+        submit.disabled = true;
+        try {
+          const r = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: pin.value.trim() }),
+          });
+          if (r.ok) {
+            location.replace('/');
+            return;
+          }
+          err.textContent = 'PIN 不正确，请重试';
+        } catch (_) {
+          err.textContent = '无法连接，请检查是否在同一网络';
+        }
+        submit.disabled = false;
+        pin.value = '';
+        pin.focus();
+      });
+    </script>
+  </body>
+</html>

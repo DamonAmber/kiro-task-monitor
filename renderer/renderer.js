@@ -241,6 +241,61 @@ if (btnMoveApp) {
 }
 window.api.onUpdateState((state) => renderUpdate(state));
 
+/* ---------- 局域网访问 ---------- */
+function renderLan(state) {
+  if (!state) return;
+  const toggle = document.getElementById('lan-toggle');
+  const box = document.getElementById('lan-box');
+  const urlEl = document.getElementById('lan-url');
+  const pinEl = document.getElementById('lan-pin');
+  const hintEl = document.getElementById('lan-hint');
+  if (!toggle) return;
+
+  toggle.checked = !!state.enabled;
+  box.classList.toggle('hidden', !state.enabled);
+
+  if (state.enabled) {
+    if (state.error) {
+      urlEl.textContent = '启动失败';
+      urlEl.classList.add('lan-fail');
+      hintEl.textContent = `无法启动服务：${state.error}`;
+    } else if (state.running) {
+      urlEl.classList.remove('lan-fail');
+      const url = (state.urls && state.urls[0]) || `http://${state.ip || '本机IP'}:${state.port}`;
+      urlEl.textContent = url;
+      // 多个网卡地址时把其余的也放到 title 里备选
+      urlEl.title = (state.urls || []).join('\n') || url;
+      hintEl.textContent =
+        '同一 Wi-Fi 下的 iPhone 用 Safari 打开上面网址、输入 PIN 即可查看；点分享菜单里「添加到主屏幕」后可全屏、横竖屏自适应。首次开启若弹出「允许接受传入网络连接」请点允许。';
+    } else {
+      urlEl.textContent = '正在启动…';
+    }
+    pinEl.textContent = state.pin || '——';
+  }
+}
+
+async function initLan() {
+  const toggle = document.getElementById('lan-toggle');
+  const regen = document.getElementById('lan-regen');
+  if (!toggle) return;
+
+  toggle.addEventListener('change', async () => {
+    const st = await window.api.setWebEnabled(toggle.checked);
+    renderLan(st);
+  });
+  regen.addEventListener('click', async () => {
+    regen.disabled = true;
+    const st = await window.api.regenWeb();
+    renderLan(st);
+    regen.disabled = false;
+  });
+
+  window.api.onWebState((st) => renderLan(st));
+  try {
+    renderLan(await window.api.getWebState());
+  } catch {}
+}
+
 /* ---------- 套餐用量 ---------- */
 const usageEl = document.getElementById('usage');
 const usageMainEl = document.getElementById('usage-main');
@@ -384,4 +439,5 @@ window.api.onSessions(({ sessions, config, usage }) => {
     const st = await window.api.getUpdateState();
     renderUpdate(st);
   } catch {}
+  initLan();
 })();
