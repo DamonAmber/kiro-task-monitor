@@ -246,32 +246,36 @@ function renderLan(state) {
   if (!state) return;
   const toggle = document.getElementById('lan-toggle');
   const box = document.getElementById('lan-box');
-  const urlEl = document.getElementById('lan-url');
+  const urlsEl = document.getElementById('lan-urls');
   const pinEl = document.getElementById('lan-pin');
   const hintEl = document.getElementById('lan-hint');
   if (!toggle) return;
 
   toggle.checked = !!state.enabled;
   box.classList.toggle('hidden', !state.enabled);
+  if (!state.enabled) return;
 
-  if (state.enabled) {
-    if (state.error) {
-      urlEl.textContent = '启动失败';
-      urlEl.classList.add('lan-fail');
-      hintEl.textContent = `无法启动服务：${state.error}`;
-    } else if (state.running) {
-      urlEl.classList.remove('lan-fail');
-      const url = (state.urls && state.urls[0]) || `http://${state.ip || '本机IP'}:${state.port}`;
-      urlEl.textContent = url;
-      // 多个网卡地址时把其余的也放到 title 里备选
-      urlEl.title = (state.urls || []).join('\n') || url;
-      hintEl.textContent =
-        '同一 Wi-Fi 下的 iPhone 用 Safari 打开上面网址、输入 PIN 即可查看；点分享菜单里「添加到主屏幕」后可全屏、横竖屏自适应。首次开启若弹出「允许接受传入网络连接」请点允许。';
+  if (state.error) {
+    urlsEl.innerHTML = `<div class="lan-url-row lan-fail">启动失败：${esc(state.error)}</div>`;
+  } else if (state.running) {
+    const addrs = state.addresses || [];
+    if (!addrs.length) {
+      urlsEl.innerHTML = `<div class="lan-url-row lan-fail">未检测到局域网地址（是否连了网络？）</div>`;
     } else {
-      urlEl.textContent = '正在启动…';
+      // 全部地址逐行列出，Wi-Fi 已排在最前并标注，方便直接选对
+      urlsEl.innerHTML = addrs
+        .map((a) => {
+          const tag = a.isWifi
+            ? '<span class="lan-net wifi">Wi-Fi</span>'
+            : `<span class="lan-net">${esc(a.iface || '有线')}</span>`;
+          return `<div class="lan-url-row">${tag}<b class="lan-url">${esc(a.url)}</b></div>`;
+        })
+        .join('');
     }
-    pinEl.textContent = state.pin || '——';
+  } else {
+    urlsEl.innerHTML = `<div class="lan-url-row">正在启动…</div>`;
   }
+  pinEl.textContent = state.pin || '——';
 }
 
 async function initLan() {

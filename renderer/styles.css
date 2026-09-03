@@ -532,8 +532,48 @@ body {
   color: var(--running);
   flex: 0 0 auto;
 }
-.lan-v.lan-fail {
+
+/* 网址列表：每个网卡地址一行，Wi-Fi 标注在前 */
+.lan-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+.lan-url-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.lan-url-row.lan-fail {
   color: var(--failed);
+}
+.lan-net {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 2px 5px;
+  min-width: 40px;
+  text-align: center;
+}
+.lan-net.wifi {
+  color: #7fb0ff;
+  background: rgba(59, 130, 246, 0.16);
+}
+.lan-url {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* 更新区 */

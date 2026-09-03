@@ -50,7 +50,7 @@ let kiroDownSince = 0; // Kiro 首次被判定为「未运行」的时刻（0=�
 const KIRO_DOWN_CONFIRM_MS = 20 * 1000;
 let quittingForUpdate = false; // 正在为安装更新而退出（放行 window-all-closed 守卫）
 // 局域网 Web 服务运行态（供设置面板展示网址/端口/错误）
-let webInfo = { running: false, port: 0, ip: '', urls: [], error: '' };
+let webInfo = { running: false, port: 0, addresses: [], error: '' };
 let updateNotification = null; // 持有「更新已就绪」通知的引用，避免被 GC
 // 更新状态，推送给渲染层用于设置里展示：idle/checking/available/downloading/downloaded/not-available/error/dev
 let updateState = { status: 'idle', current: '', latest: '', progress: 0, error: '', readOnly: false };
@@ -562,12 +562,18 @@ function ensureWebSecrets() {
 }
 
 function getWebState() {
+  const port = webInfo.port || config.get('webPort') || 8787;
+  // 把每个网卡地址拼成完整网址，标注网卡名与是否 Wi-Fi，交给设置面板全部展示
+  const addresses = (webInfo.addresses || []).map((a) => ({
+    url: `http://${a.address}:${port}`,
+    iface: a.iface,
+    isWifi: !!a.isWifi,
+  }));
   return {
     enabled: !!config.get('webEnabled'),
     running: !!webInfo.running,
-    port: webInfo.port || config.get('webPort') || 8787,
-    ip: webInfo.ip || '',
-    urls: webInfo.urls || [],
+    port,
+    addresses,
     pin: config.get('webPin') || '',
     error: webInfo.error || '',
   };
@@ -587,11 +593,14 @@ async function startWebServer() {
       getSnapshot: () => ({ sessions: lastSessions, usage: lastUsage, serverTime: Date.now() }),
     });
     webInfo = { running: true, error: '', ...info };
-    console.log('[web] 局域网服务已启动:', (info.urls || []).join(' '));
+    console.log(
+      '[web] 局域网服务已启动:',
+      (info.addresses || []).map((a) => `http://${a.address}:${info.port}${a.isWifi ? '(Wi-Fi)' : ''}`).join(' ')
+    );
   } catch (e) {
     const msg = (e && e.message) || String(e);
     console.error('[web] 启动失败:', msg);
-    webInfo = { running: false, port: 0, ip: '', urls: [], error: msg };
+    webInfo = { running: false, port: 0, addresses: [], error: msg };
   }
   pushWebState();
   return webInfo;
@@ -603,7 +612,7 @@ async function stopWebServer() {
   } catch {
     /* ignore */
   }
-  webInfo = { running: false, port: 0, ip: '', urls: [], error: '' };
+  webInfo = { running: false, port: 0, addresses: [], error: '' };
   pushWebState();
 }
 

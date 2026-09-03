@@ -45,18 +45,49 @@ let heartbeat = null;
  * 工具
  * ------------------------------------------------------------------ */
 
-/** 返回本机所有可用于局域网访问的 IPv4 地址（优先内网段）。 */
+// Wi-Fi 网卡设备名（macOS）。探测一次并缓存：undefined=未探测 / null=无。
+let _wifiIface;
+function wifiIface() {
+  if (_wifiIface !== undefined) return _wifiIface;
+  _wifiIface = null;
+  if (process.platform === 'darwin') {
+    try {
+      const out = require('child_process').execFileSync(
+        'networksetup',
+        ['-listallhardwareports'],
+        { encoding: 'utf8', timeout: 3000 }
+      );
+      // 匹配「Hardware Port: Wi-Fi」块里的「Device: enX」
+      const m = out.match(/Hardware Port:\s*Wi-?Fi\s*\r?\nDevice:\s*(\w+)/i);
+      if (m) _wifiIface = m[1];
+    } catch {
+      /* 探测失败即视为未知，不影响功能 */
+    }
+  }
+  return _wifiIface;
+}
+
+/**
+ * 返回本机所有可用于局域网访问的 IPv4 地址，附带所在网卡名与是否为 Wi-Fi。
+ * 手机通常走 Wi-Fi，故 Wi-Fi 地址排最前；其余按常见私有网段顺序。
+ * 无法确定"手机与哪块网卡同网段"，因此调用方应把全部地址都展示给用户自行选择。
+ */
 function lanIPs() {
+  const wifi = wifiIface();
   const out = [];
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const ni of ifaces[name] || []) {
-      if (ni.family === 'IPv4' && !ni.internal) out.push(ni.address);
+      if (ni.family === 'IPv4' && !ni.internal) {
+        out.push({ address: ni.address, iface: name, isWifi: name === wifi });
+      }
     }
   }
-  // 优先私有网段（192.168 / 10 / 172.16-31），更可能是 Wi-Fi 局域网地址
-  const rank = (ip) =>
-    /^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3;
+  const rank = (x) => {
+    if (x.isWifi) return 0; // Wi-Fi 最优先（手机常连 Wi-Fi）
+    const ip = x.address;
+    return /^192\.168\./.test(ip) ? 2 : /^10\./.test(ip) ? 3 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 4 : 5;
+  };
   return out.sort((a, b) => rank(a) - rank(b));
 }
 
@@ -300,11 +331,8 @@ function broadcast(payload) {
 }
 
 function getInfo() {
-  const ips = lanIPs();
-  const ip = ips[0] || '127.0.0.1';
-  const port = boundPort || 0;
-  const urls = ips.map((a) => `http://${a}:${port}`);
-  return { port, ip, urls };
+  // addresses: [{ address, iface, isWifi }]，Wi-Fi 优先。端口由 port 单独给出。
+  return { port: boundPort || 0, addresses: lanIPs() };
 }
 
 module.exports = { start, stop, broadcast, getInfo, lanIPs };

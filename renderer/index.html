@@ -71,14 +71,14 @@
           <!-- 局域网访问：手机/平板浏览器全屏查看（只读） -->
           <label class="row"><span><b>局域网访问</b>（手机/平板全屏查看）</span><input type="checkbox" id="lan-toggle" /></label>
           <div class="lan-box hidden" id="lan-box">
-            <div class="lan-line"><span class="lan-k">网址</span><b class="lan-v" id="lan-url">—</b></div>
+            <div class="lan-urls" id="lan-urls"></div>
             <div class="lan-line">
               <span class="lan-k">访问 PIN</span>
               <b class="lan-v lan-pin" id="lan-pin">—</b>
               <button class="mini-btn nodrag" id="lan-regen">换一个</button>
             </div>
             <div class="hint" id="lan-hint">
-              同一 Wi-Fi 下的 iPhone 用 Safari 打开上面网址、输入 PIN 即可查看；点分享菜单里「添加到主屏幕」后可全屏、横竖屏自适应。首次开启若弹出「允许接受传入网络连接」请点允许。
+              手机连的是哪个网络，就用对应那行的网址（一般是 Wi-Fi）。用 Safari 打开、输入 PIN 即可查看；分享菜单里「添加到主屏幕」后可全屏、横竖屏自适应。首次开启若弹出「允许接受传入网络连接」请点允许。
             </div>
           </div>
           <hr />
