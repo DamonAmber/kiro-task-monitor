@@ -27,6 +27,7 @@
         </div>
         <div class="topbar-right">
           <span class="counts" id="counts"></span>
+          <button class="notif-btn" id="notif-btn" title="开启完成/出错通知">🔕</button>
           <span class="conn" id="conn" title="连接状态"><i class="conn-dot"></i><span id="conn-text">连接中…</span></span>
         </div>
       </header>
@@ -49,6 +50,9 @@
         <div class="usage-track"><div class="usage-fill" id="usage-fill"></div></div>
         <div class="usage-sub" id="usage-sub"></div>
       </footer>
+
+      <!-- 页内提示（通知开启时的可靠兜底，无论系统通知是否可用） -->
+      <div class="toasts" id="toasts"></div>
     </div>
     <script src="app.js"></script>
   </body>

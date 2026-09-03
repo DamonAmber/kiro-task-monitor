@@ -19,15 +19,19 @@ function clamp(v, a, b) {
 /**
  * 画一个尺寸为 S×S 的 ◐，返回 RGBA buffer。
  * @param {number} S 边长
- * @param {{color?:number[], dot?:boolean}} opts
- *        color 字形颜色（默认黑，用于模板图）；dot=true 时在右上角叠一个红点（失败角标）
+ * @param {{color?:number[], dot?:boolean, angle?:number}} opts
+ *        color 字形颜色（默认黑，用于模板图）；dot=true 时在右上角叠一个红点（失败角标）；
+ *        angle 实心半圆的旋转角（弧度，默认 π/2 = 左半实心的原始 ◐）。改变它即可做旋转动画。
  */
 function drawGlyph(S, opts = {}) {
   const color = opts.color || [0, 0, 0];
+  // 实心半圆填充的旋转角：默认 π/2 → 覆盖左半圆（下→左→上），即原始 ◐ 外观
+  const ang = opts.angle == null ? Math.PI / 2 : opts.angle;
   const buf = Buffer.alloc(S * S * 4); // 透明底 RGBA
   const c = S / 2;
   const r = S * 0.38; // 外圆半径
   const strokeHalf = Math.max(S * 0.06, 0.85); // 圆环半宽
+  const TWO_PI = Math.PI * 2;
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const px = x + 0.5;
@@ -35,9 +39,11 @@ function drawGlyph(S, opts = {}) {
       const dist = Math.hypot(px - c, py - c);
       // 圆环（整圈描边）
       const ring = clamp(0.5 - (Math.abs(dist - r) - strokeHalf), 0, 1);
-      // 左半实心（圆的左半径内填满 → 组成 ◐）
-      const leftFill = px <= c ? clamp(0.5 - (dist - r), 0, 1) : 0;
-      const cov = Math.max(ring, leftFill);
+      // 半圆实心（以 ang 为轴的半平面内填满 → 组成 ◐；旋转 ang 即得动画帧）
+      let delta = Math.atan2(py - c, px - c) - ang;
+      delta = ((delta % TWO_PI) + TWO_PI) % TWO_PI;
+      const halfFill = delta < Math.PI ? clamp(0.5 - (dist - r), 0, 1) : 0;
+      const cov = Math.max(ring, halfFill);
       if (cov <= 0) continue;
       const i = (y * S + x) * 4;
       buf[i] = color[0];
@@ -118,7 +124,8 @@ function makeTrayIcon(opts = {}) {
     // 无告警：模板图（黑+alpha），由 macOS 自适应深/浅色菜单栏；
     // 有告警：彩色图（不能用模板，否则红点会被抹成单色），字形颜色按主题手动选。
     const glyphColor = alert ? (opts.dark ? [235, 235, 235] : [45, 45, 45]) : [0, 0, 0];
-    const draw = (S) => encodePNG(drawGlyph(S, { color: glyphColor, dot: alert }), S);
+    const angle = opts.angle; // 传入即产出旋转动画帧；不传用默认左半 ◐
+    const draw = (S) => encodePNG(drawGlyph(S, { color: glyphColor, dot: alert, angle }), S);
     const img = nativeImage.createFromBuffer(draw(18)); // 1x
     try {
       img.addRepresentation({ scaleFactor: 2, width: 18, height: 18, buffer: draw(36) });

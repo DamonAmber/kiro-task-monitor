@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
     />
     <title>Kiro 任务监控</title>
     <link rel="stylesheet" href="styles.css" />
@@ -19,6 +19,7 @@
           <span class="counts" id="counts"></span>
         </div>
         <div class="titlebar-right nodrag">
+          <button class="icon-btn" id="btn-stats" title="任务战报">📊</button>
           <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
           <button class="icon-btn" id="btn-hide" title="隐藏">—</button>
         </div>
@@ -71,6 +72,10 @@
           <label class="row"><span>显示最近（小时）</span><input type="number" min="1" step="1" data-cfg="activeWithinHours" class="num-in" /></label>
           <label class="row"><span>底部显示<b>套餐用量</b></span><input type="checkbox" data-cfg="showUsage" /></label>
           <label class="row"><span>监控 <b>Claude Code</b> 会话</span><input type="checkbox" data-cfg="watchClaude" /></label>
+          <hr />
+          <label class="row"><span>卡片显示<b>当前动作</b>（执行的工具 / 等待的问题）</span><input type="checkbox" data-cfg="showActivity" /></label>
+          <label class="row"><span>卡片显示<b>迷你时间线</b>（近 10 分钟活动）</span><input type="checkbox" data-cfg="showTimeline" /></label>
+          <label class="row"><span>运行中<b>菜单栏图标动画</b></span><input type="checkbox" data-cfg="animateTray" /></label>
           <label class="row"><span><b>极简模式</b>（单行紧凑，可缩到很小）</span><input type="checkbox" data-cfg="compactMode" /></label>
           <label class="row"><span>窗口置顶</span><input type="checkbox" data-cfg="alwaysOnTop" /></label>
           <hr />
@@ -122,6 +127,38 @@
             <button class="update-btn nodrag hidden" id="btn-move-app">移动到「应用程序」并重启</button>
           </div>
           <button class="quit-btn nodrag" id="btn-quit">退出监控</button>
+        </div>
+      </section>
+
+      <!-- 任务战报 / 历史统计面板 -->
+      <section class="stats hidden" id="stats">
+        <div class="settings-head">
+          <span>任务战报</span>
+          <button class="icon-btn nodrag" id="btn-stats-close">✕</button>
+        </div>
+        <div class="stats-body">
+          <div class="stats-range nodrag">
+            <button class="seg active" data-range="today">今日</button>
+            <button class="seg" data-range="7d">近 7 天</button>
+          </div>
+          <div class="stats-metrics" id="stats-metrics"></div>
+          <div class="stats-block">
+            <div class="stats-block-head" id="stats-chart-title">完成 / 出错分布</div>
+            <div class="stats-chart" id="stats-chart"></div>
+          </div>
+          <div class="stats-block" id="stats-ws-block">
+            <div class="stats-block-head">按工作区</div>
+            <div class="stats-list" id="stats-ws"></div>
+          </div>
+          <div class="stats-block" id="stats-model-block">
+            <div class="stats-block-head">按模型</div>
+            <div class="stats-list" id="stats-model"></div>
+          </div>
+          <div class="stats-block" id="stats-fail-block">
+            <div class="stats-block-head">失败原因</div>
+            <div class="stats-list" id="stats-fail"></div>
+          </div>
+          <div class="stats-note" id="stats-note"></div>
         </div>
       </section>
     </div>

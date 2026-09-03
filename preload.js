@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   // 诊断报告：生成并保存为 JSON（{ includeSensitive } → { ok, path } | { canceled } | { error }）
   generateDiagnostics: (options) => ipcRenderer.invoke('diagnostics:generate', options),
+  // 任务战报 / 历史统计：range 为 'today' | '7d'
+  getStats: (range) => ipcRenderer.invoke('stats:get', range),
   // 局域网访问：读状态 / 开关 / 改端口 / 换 PIN / 订阅状态推送
   getWebState: () => ipcRenderer.invoke('web:state'),
   setWebEnabled: (enabled) => ipcRenderer.invoke('web:setEnabled', enabled),

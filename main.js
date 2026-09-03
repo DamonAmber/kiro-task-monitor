@@ -25,6 +25,7 @@ const { readUsage } = require('./src/usage');
 const { readOpenWindowContextAsync } = require('./src/openWindows');
 const { checkPermissions } = require('./src/permissions');
 const { buildReport } = require('./src/diagnostics');
+const { buildStats } = require('./src/stats');
 const { SESSIONS_DIR } = require('./src/kiroPaths');
 const { makeTrayIcon } = require('./src/trayIcon');
 const retry = require('./src/retry');
@@ -51,6 +52,12 @@ const permNotified = { accessibility: false, diskAccess: false };
 let cachedWinCtx = null;
 let cachedClaudePids = null; // 当前存活的 Claude 会话进程 pid 集（异步刷新；null=未知，不判中断）
 let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时才重绘图标）
+// 动态托盘：有会话运行中时让 ◐ 旋转。帧按 (alert,dark) 预生成后循环，(alert,dark) 变化才重建。
+let trayAnimTimer = null;
+let trayAnimFrames = null; // 当前 (alert,dark) 下预生成的 nativeImage 帧
+let trayAnimIdx = 0;
+let trayAnimKey = ''; // 'alert:dark' 签名，用于判断是否需要重建帧
+const TRAY_FRAMES = 12; // 一圈的帧数（12 帧 × 130ms ≈ 1.56s/圈，平缓不晃眼）
 let kiroDownSince = 0; // Kiro 首次被判定为「未运行」的时刻（0=当前认为在运行/未知）
 // 中断判定防抖：Kiro 需被「持续」判定未运行超过该时长，才认定确实退出。
 // 避免 pgrep 偶发漏读把运行中的会话瞬间错标为「已中断」。
@@ -253,9 +260,16 @@ function updateTrayTitle(sessions) {
 
   // ⑥ 失败红点角标：有 failed/stuck（含"已中断"）时给图标叠红点；只在状态切换时重绘
   const alert = failed > 0;
-  if (alert !== trayAlert) {
-    trayAlert = alert;
-    applyTrayIcon();
+  const alertChanged = alert !== trayAlert;
+  trayAlert = alert;
+  // 动态图标：有会话运行中 → 旋转动画；否则停到静态帧。避免空闲时每轮重复重绘。
+  const shouldAnim = running > 0 && config && config.get('animateTray') !== false;
+  if (shouldAnim) {
+    startTrayAnim(); // 幂等；alert/dark 变化时动画循环内部会重建帧
+  } else if (trayAnimTimer) {
+    stopTrayAnim(); // 从动画切回静态：停止并恢复静态图（含告警红点）
+  } else if (alertChanged) {
+    applyTrayIcon(); // 本就静态：仅在告警态切换时重绘
   }
 
   // 详情放到悬停提示里，不占菜单栏空间
@@ -266,10 +280,50 @@ function updateTrayTitle(sessions) {
   tray.setToolTip(parts.length ? `Kiro 任务监控 · ${parts.join(' · ')}` : 'Kiro 任务监控');
 }
 
-/** 按当前告警状态 + 系统主题重建托盘图标。 */
+/** 按当前告警状态 + 系统主题重建托盘图标（静态帧）。 */
 function applyTrayIcon() {
   if (!tray) return;
   tray.setImage(makeTrayIcon({ alert: trayAlert, dark: nativeTheme.shouldUseDarkColors }));
+}
+
+/** 预生成当前 (alert,dark) 下一整圈的旋转帧，缓存起来循环用。 */
+function buildTrayFrames() {
+  const alert = trayAlert;
+  const dark = nativeTheme.shouldUseDarkColors;
+  const frames = [];
+  for (let i = 0; i < TRAY_FRAMES; i++) {
+    const angle = Math.PI / 2 + (i / TRAY_FRAMES) * Math.PI * 2;
+    frames.push(makeTrayIcon({ alert, dark, angle }));
+  }
+  trayAnimFrames = frames;
+  trayAnimKey = `${alert}:${dark}`;
+}
+
+/** 开始托盘旋转动画（幂等）。(alert,dark) 变化时会自动重建帧。 */
+function startTrayAnim() {
+  if (trayAnimTimer) return;
+  trayAnimTimer = setInterval(() => {
+    if (!tray) return;
+    const key = `${trayAlert}:${nativeTheme.shouldUseDarkColors}`;
+    if (!trayAnimFrames || trayAnimKey !== key) {
+      buildTrayFrames();
+      trayAnimIdx = 0;
+    }
+    trayAnimIdx = (trayAnimIdx + 1) % trayAnimFrames.length;
+    tray.setImage(trayAnimFrames[trayAnimIdx]);
+  }, 130);
+}
+
+/** 停止托盘动画并恢复静态 ◐（含告警红点 / 主题自适应）。 */
+function stopTrayAnim() {
+  if (trayAnimTimer) {
+    clearInterval(trayAnimTimer);
+    trayAnimTimer = null;
+  }
+  trayAnimFrames = null;
+  trayAnimKey = '';
+  trayAnimIdx = 0;
+  applyTrayIcon();
 }
 
 /* ------------------------------------------------------------------ *
@@ -883,6 +937,15 @@ function registerIpc() {
 
   // —— 诊断报告 —— //
   ipcMain.handle('diagnostics:generate', (_e, opts) => generateDiagnostics(opts || {}));
+
+  // —— 任务战报 / 历史统计（按需计算，不进 poll 热路径）—— //
+  ipcMain.handle('stats:get', (_e, range) => {
+    try {
+      return buildStats({ range, now: Date.now() });
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+  });
 
   // —— 更新相关 —— //
   ipcMain.handle('update:state', () => updateState);

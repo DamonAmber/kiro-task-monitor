@@ -27,6 +27,10 @@ const DEFAULT_CONFIG = {
 
   watchClaude: true, // 同时监控 Claude Code 会话（只读；运行/完成/失败/中断）
 
+  showActivity: true, // 卡片显示"当前动作"（运行中执行的工具 / 等待你时的问题）
+  showTimeline: true, // 卡片显示迷你活动时间线（近 10 分钟事件密度 sparkline）
+  animateTray: true, // 运行中时菜单栏 ◐ 图标做旋转动画（有会话在跑时）
+
   compactMode: false, // 极简模式：单行紧凑卡片、隐藏次要信息、窗口可缩到很小
 
   // 局域网访问：开启后在本机起一个只读 HTTP+SSE 服务，手机/平板/另一台电脑

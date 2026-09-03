@@ -48,6 +48,28 @@ function fmtDur(ms) {
   return `${h}时${m % 60}分`;
 }
 
+// 迷你活动时间线：把 activity（每桶事件计数）画成一排细条
+function sparklineHtml(activity) {
+  if (!Array.isArray(activity) || !activity.length) return '';
+  const max = Math.max(1, ...activity);
+  if (max <= 0) return '';
+  const bars = activity
+    .map((v) => `<i style="height:${v > 0 ? Math.max(18, Math.round((v / max) * 100)) : 0}%"></i>`)
+    .join('');
+  return `<div class="spark">${bars}</div>`;
+}
+
+// "当前动作"行：运行中显示正在执行的工具；等待你时显示 agent 抛出的问题
+function activityHtml(s) {
+  if ((s.state === 'running' || s.state === 'stuck') && s.runningTool) {
+    return `<div class="card-act">⚙ 执行 ${esc(s.runningTool)}</div>`;
+  }
+  if (s.state === 'waiting' && s.question) {
+    return `<div class="card-act wait">💬 ${esc(s.question)}</div>`;
+  }
+  return '';
+}
+
 let sessions = [];
 let receivedAt = Date.now(); // 本帧数据到达的本地时刻，用于续算 running 耗时
 
@@ -119,6 +141,8 @@ function render() {
             <span class="time"${timeAttr}>${timeTxt ? '· ' + timeTxt : ''}</span>
             <span class="ws">· ${esc(s.workspaceName || '—')}${reason}</span>
           </div>
+          ${activityHtml(s)}
+          ${sparklineHtml(s.activity)}
         </div>
       </div>`;
     })
@@ -191,12 +215,151 @@ function renderPermissions(perm) {
   }
 }
 
+/* ---------- 通知：网页打开时，任务完成/出错/等待你 → 响铃 + 震动 + 系统通知 + 页内提示 ---------- *
+ * 说明：局域网走 HTTP（非安全上下文），浏览器的后台 Web Push / Service Worker 推送用不了；
+ * 这里做的是"网页在前台打开时"的实时提醒，正好契合把一台闲置设备立成任务看板的用法。
+ */
+const NOTIF_KEY = 'ktm_notify';
+let notifEnabled = localStorage.getItem(NOTIF_KEY) === '1';
+let notifSeeded = false; // 首帧只建基线，不对历史状态补发
+const prevStates = new Map(); // key -> state
+let audioCtx = null;
+
+const notifBtn = document.getElementById('notif-btn');
+const toastsEl = document.getElementById('toasts');
+
+function syncNotifBtn() {
+  if (!notifBtn) return;
+  notifBtn.textContent = notifEnabled ? '🔔' : '🔕';
+  notifBtn.classList.toggle('on', notifEnabled);
+  notifBtn.title = notifEnabled ? '通知已开启（点击关闭）' : '开启完成/出错通知';
+}
+
+async function toggleNotif() {
+  notifEnabled = !notifEnabled;
+  localStorage.setItem(NOTIF_KEY, notifEnabled ? '1' : '0');
+  syncNotifBtn();
+  if (notifEnabled) {
+    // 用户手势内：解锁音频 + 申请系统通知权限（iOS 需已"添加到主屏幕"）
+    unlockAudio();
+    beep('done');
+    if (navigator.vibrate) navigator.vibrate(20);
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+    } catch (_) {}
+    toast('通知已开启', 'done');
+  }
+}
+
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (_) {
+    audioCtx = null;
+  }
+}
+
+// 用 WebAudio 生成短促提示音（无需音频文件）。kind: done/failed/waiting
+function beep(kind) {
+  if (!audioCtx) return;
+  try {
+    const seq =
+      kind === 'failed'
+        ? [[440, 0], [330, 0.12]] // 下行双音（警示）
+        : kind === 'waiting'
+        ? [[620, 0]] // 单音
+        : [[660, 0], [880, 0.1]]; // 上行双音（完成）
+    const t0 = audioCtx.currentTime;
+    for (const [freq, at] of seq) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = t0 + at;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.24);
+    }
+  } catch (_) {}
+}
+
+function vibrate(kind) {
+  if (!navigator.vibrate) return;
+  navigator.vibrate(kind === 'failed' ? [80, 60, 80] : kind === 'waiting' ? [60] : [40, 40, 40]);
+}
+
+function systemNotify(title, body) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, tag: 'ktm', renotify: true });
+    }
+  } catch (_) {}
+}
+
+function toast(text, kind) {
+  if (!toastsEl) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || '');
+  el.textContent = text;
+  toastsEl.appendChild(el);
+  // 触发进入动画
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, 4200);
+}
+
+function notifyTransition(kind, s) {
+  const ws = s.workspaceName || '未知工作区';
+  const icon = kind === 'failed' ? '❌ 出错' : kind === 'waiting' ? '🟡 等待你' : '✅ 完成';
+  const title = `${icon} · ${ws}`;
+  const body = s.title || '';
+  beep(kind);
+  vibrate(kind);
+  systemNotify(title, body);
+  toast(`${icon} · ${body || ws}`, kind);
+}
+
+// 检测状态跳变，触发提醒（与桌面端逻辑对齐：完成/出错/等待你；中断不提醒）
+const LIVE_OR_DONE = new Set(['running', 'waiting', 'stuck']);
+function detectTransitions(list) {
+  const seen = new Set();
+  for (const s of list) {
+    seen.add(s.key);
+    const prev = prevStates.get(s.key);
+    prevStates.set(s.key, s.state);
+    if (!notifSeeded || !notifEnabled) continue;
+    if (prev === s.state) continue;
+
+    if (s.state === 'done' && prev && LIVE_OR_DONE.has(prev)) {
+      notifyTransition('done', s);
+    } else if ((s.state === 'failed' || s.state === 'stuck') && !s.interrupted && prev !== s.state) {
+      notifyTransition('failed', s);
+    } else if (s.state === 'waiting' && prev !== 'waiting') {
+      notifyTransition('waiting', s);
+    }
+  }
+  for (const k of [...prevStates.keys()]) if (!seen.has(k)) prevStates.delete(k);
+  notifSeeded = true;
+}
+
+if (notifBtn) notifBtn.addEventListener('click', toggleNotif);
+syncNotifBtn();
+
 /* ---------- 数据流 ---------- */
 function applyPayload(payload) {
   if (!payload) return;
   sessions = payload.sessions || [];
   receivedAt = Date.now();
   if ('permissions' in payload) renderPermissions(payload.permissions);
+  detectTransitions(sessions);
   render();
   renderUsage(payload.usage);
 }

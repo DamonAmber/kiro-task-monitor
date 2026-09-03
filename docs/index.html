@@ -128,6 +128,12 @@
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .appshot .as-meta .sl { font-weight: 600; }
+      .appshot .as-act { font-size: 11px; color: var(--dim); margin-top: 4px; }
+      .appshot .as-spark { display: flex; align-items: flex-end; gap: 1px; height: 15px; margin-top: 6px; }
+      .appshot .as-spark i {
+        flex: 1 1 auto; min-width: 1px; border-radius: 1px;
+        background: linear-gradient(to top, var(--blue), rgba(59,130,246,.35));
+      }
       .appshot .as-retry {
         align-self: center; color: #fff; border-radius: 7px; padding: 5px 10px;
         font-size: 11.5px; font-weight: 600; flex: 0 0 auto;
@@ -244,6 +250,10 @@
                 <div class="as-main">
                   <div class="as-t"><span class="as-tag">当前</span>重构支付回调的幂等处理</div>
                   <div class="as-meta"><span class="as-src as-src-kiro">Kiro</span><span class="sl" style="color: var(--blue)">运行中</span> · 2分15秒 · payment-service</div>
+                  <div class="as-act">⚙ 执行 grep_search</div>
+                  <div class="as-spark">
+                    <i style="height:30%"></i><i style="height:70%"></i><i style="height:45%"></i><i style="height:90%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:100%"></i><i style="height:60%"></i><i style="height:75%"></i><i style="height:35%"></i><i style="height:85%"></i>
+                  </div>
                 </div>
               </div>
               <div class="as-card">
@@ -295,6 +305,9 @@
           <div class="feat"><span class="ic">🟢</span><h3>完成即时通知</h3><p>任务跑完立刻弹通知，不用反复切回去看它好了没。</p></div>
           <div class="feat"><span class="ic">🔴</span><h3>出错一键重试</h3><p>会话因报错停下时高亮告警，点一下就把「继续」发回对应窗口。</p></div>
           <div class="feat"><span class="ic">🟣</span><h3>卡死兜底</h3><p>运行中却长时间无动静，判定疑似卡住并提醒，避免白等。</p></div>
+          <div class="feat"><span class="ic">📊</span><h3>任务战报</h3><p>今日 / 近 7 天的完成、出错、取消数与 agent 活跃总时长一目了然，还能按工作区、模型拆分，看清产出与失败都出在哪。</p></div>
+          <div class="feat"><span class="ic">⚡</span><h3>看清正在做什么</h3><p>运行中的卡片直接显示 agent 当前执行的动作，并附一条迷你时间线展示最近 10 分钟的忙碌节奏——不用切回去也知道它在忙。</p></div>
+          <div class="feat"><span class="ic">🔔</span><h3>手机响铃提醒</h3><p>局域网看板页可开启通知：任务完成 / 出错 / 等你确认时，手机响铃 + 震动 + 弹窗提示，把闲置设备变成会喊你的任务看板。</p></div>
           <div class="feat"><span class="ic">🎯</span><h3>只盯打开的会话</h3><p>跨多个窗口，只显示你当前真正打开着的会话，还标出每个窗口「当前」聚焦的那个，不被旧会话刷屏。</p></div>
           <div class="feat"><span class="ic">🔐</span><h3>授权自检提醒</h3><p>启动自动检查一键重试 / 聚焦所需的「辅助功能」授权。缺了就在浮窗顶部提醒，点「去授权」直达系统设置，不再对着没反应的按钮发愁。</p></div>
           <div class="feat"><span class="ic">💳</span><h3>套餐用量一眼看</h3><p>浮窗底部一条进度条，随时看清套餐额度用了多少、还剩多少、几天后重置；接近上限变黄、超额变红。</p></div>
@@ -350,12 +363,16 @@
             <p>浮窗底部一条用量进度条：还剩多少额度、已用百分比、几天后重置一目了然；接近上限变黄、超额变红。不需要时可在设置里关掉。</p>
           </div>
           <div class="feat">
-            <span class="ic">📊</span><h3>菜单栏概览</h3>
-            <p>菜单栏一个 <code>◐</code> 图标，后面跟当前运行中的会话数（没有就只显示图标，清清爽爽）；有任务出错 / 卡住时，图标角上亮一个红点提醒。光标停上去看运行中 / 待处理详情。左键显示/隐藏浮窗，右键打开快捷菜单。</p>
+            <span class="ic">🧭</span><h3>菜单栏概览</h3>
+            <p>菜单栏一个 <code>◐</code> 图标，后面跟当前运行中的会话数（没有就只显示图标，清清爽爽）；<b>有会话在跑时图标会缓缓转动</b>，有任务出错 / 卡住时角上亮一个红点提醒。光标停上去看详情，左键显示/隐藏浮窗，右键打开快捷菜单。</p>
           </div>
           <div class="feat">
-            <span class="ic">📱</span><h3>手机上全屏看</h3>
-            <p>在设置里打开「局域网访问」，会显示一个网址和 6 位 PIN。用同一 Wi-Fi 下的 iPhone / iPad 浏览器打开该网址、输入 PIN 即可实时查看；在 Safari「添加到主屏幕」后能全屏、横竖屏自适应，把闲置设备变成专属任务看板（只读）。</p>
+            <span class="ic">📊</span><h3>看任务战报</h3>
+            <p>点标题栏 📊 打开「任务战报」：切换<b>今日 / 近 7 天</b>，看完成、出错、取消数与 agent 活跃总时长、平均单轮耗时，还有一张时间分布图和按工作区 / 模型的拆分，一眼看清自己这段时间的产出。</p>
+          </div>
+          <div class="feat">
+            <span class="ic">📱</span><h3>手机上全屏看 + 响铃</h3>
+            <p>在设置里打开「局域网访问」，会显示一个网址和 6 位 PIN。用同一 Wi-Fi 下的 iPhone / iPad 浏览器打开、输入 PIN 即可实时查看；在 Safari「添加到主屏幕」后能全屏、横竖屏自适应。页面右上角点 🔔 开启通知，任务完成 / 出错 / 等你确认时手机就会响铃 + 震动提醒（只读）。</p>
           </div>
           <div class="feat">
             <span class="ic">🔐</span><h3>授权自检</h3>
@@ -367,7 +384,7 @@
           </div>
           <div class="feat">
             <span class="ic">⚙️</span><h3>按需设置</h3>
-            <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容，选择「只显示已打开的会话」、开关套餐用量显示，还能手动检查更新、一键重启升级。</p>
+            <p>浮窗右上角 ⚙ 可开关各类通知、设置重试发送内容，选择「只显示已打开的会话」、开关套餐用量显示，以及卡片上的「当前动作」「迷你时间线」和运行中的菜单栏图标动画，还能手动检查更新、一键重启升级。</p>
           </div>
         </div>
         <div class="note">
@@ -383,6 +400,15 @@
         <h2 class="section-title">更新日志</h2>
         <p class="section-sub">下载按钮始终指向最新版；升级后自动生效</p>
         <div class="changelog">
+          <div class="cl-item">
+            <div class="cl-ver"><span class="tag">v0.10.0</span></div>
+            <div class="cl-body">
+              <span class="cl-new">新增</span><b>任务战报</b>：标题栏 📊 打开，切换今日 / 近 7 天，看完成 / 出错 / 取消数、agent 活跃总时长、平均单轮耗时，以及按工作区、模型拆分与时间分布图。<br />
+              <span class="cl-new">新增</span><b>看清正在做什么</b>：运行中的卡片直接显示 agent 当前执行的动作，并附一条迷你时间线展示最近 10 分钟的活动节奏（都可在设置里关）。<br />
+              <span class="cl-new">新增</span><b>手机响铃提醒</b>：局域网看板页右上角可开启通知，任务完成 / 出错 / 等你确认时手机响铃 + 震动 + 弹窗提示。<br />
+              <span class="cl-new">新增</span><b>动态菜单栏图标</b>：有会话在跑时，菜单栏 ◐ 图标会缓缓转动，一眼看出「正在忙」。
+            </div>
+          </div>
           <div class="cl-item">
             <div class="cl-ver"><span class="tag">v0.9.1</span></div>
             <div class="cl-body">修复部分用户因 Kiro 会话数据位置不同而「识别不到任何会话」的问题：现在找不到默认位置时会自动定位会话数据。诊断报告也更详细，方便进一步排查。</div>

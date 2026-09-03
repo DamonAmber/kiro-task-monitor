@@ -30,6 +30,30 @@ const DEFAULTS = {
   activeWithinMs: 24 * 60 * 60 * 1000, // 只关心最近 24h 内有活动的会话
 };
 
+// 迷你活动时间线（sparkline）：把最近若干事件按时间分桶，展示"最近的忙碌节奏"。
+const ACTIVITY_WINDOW_MS = 10 * 60 * 1000; // 时间线覆盖最近 10 分钟
+const ACTIVITY_BUCKETS = 20; // 分 20 个桶（每桶 30s）
+const ACTIVITY_MAX_TS = 200; // parseSignals 里最多保留的事件时间戳个数（够铺满时间线）
+
+/**
+ * 把事件时间戳数组按最近 windowMs 分成 buckets 个桶，返回每桶的事件计数。
+ * 依赖 now，故在 decideState（每轮用最新 now 重算）里调用，而非缓存在 signals 中。
+ */
+function buildActivity(tsArr, now, windowMs = ACTIVITY_WINDOW_MS, buckets = ACTIVITY_BUCKETS) {
+  const arr = new Array(buckets).fill(0);
+  if (!tsArr || !tsArr.length) return arr;
+  const start = now - windowMs;
+  const span = windowMs / buckets;
+  for (const t of tsArr) {
+    if (t < start || t > now) continue;
+    let idx = Math.floor((t - start) / span);
+    if (idx < 0) idx = 0;
+    else if (idx >= buckets) idx = buckets - 1;
+    arr[idx] += 1;
+  }
+  return arr;
+}
+
 /* ------------------------------------------------------------------ *
  * 基础工具
  * ------------------------------------------------------------------ */
@@ -115,6 +139,7 @@ function parseSignals(lines) {
   let lastTurnEnd = null; // { ts, stopReason }
   let lastEventTs = 0;
   let lastUserTs = 0;
+  const recentEventTs = []; // 事件时间戳（用于迷你活动时间线 sparkline）
 
   // 跟踪未解决的 pending_interaction（按 toolCallId 匹配，无 id 时用栈兜底）
   const pendingById = new Map();
@@ -130,6 +155,7 @@ function parseSignals(lines) {
     if (!p) continue;
     const t = ts(ev.timestamp);
     if (t > lastEventTs) lastEventTs = t;
+    if (t) recentEventTs.push(t);
 
     switch (p.type) {
       case 'turn_start':
@@ -194,6 +220,9 @@ function parseSignals(lines) {
     lastPending,
     inflightToolTs,
     inflightToolName,
+    // 只保留末尾若干个（时间线只看最近 10min，末尾事件已足够铺满）
+    recentEventTs:
+      recentEventTs.length > ACTIVITY_MAX_TS ? recentEventTs.slice(-ACTIVITY_MAX_TS) : recentEventTs,
   };
 }
 
@@ -326,6 +355,7 @@ function decideState(meta, sig, mtimeMs, now, opts) {
     stopReason,
     question,
     interrupted, // true = 确知 Kiro 已不在运行导致的中断（区别于超时猜测的 stuck）
+    activity: buildActivity(sig.recentEventTs, now), // 迷你活动时间线（近 10min 事件密度）
     elapsedMs, // running/waiting：本轮已运行时长；done/failed：本轮耗时
     idleMs: idleFor, // 距上次写入时长（用于展示与卡死判断）
     runningTool:
@@ -627,4 +657,5 @@ module.exports = {
   listSessionDirs,
   applyOpenWindowFilter,
   visibilityDecision,
+  buildActivity,
 };

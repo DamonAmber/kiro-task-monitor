@@ -13,6 +13,36 @@ function applyCompact() {
   if (appEl) appEl.classList.toggle('compact', compact);
 }
 
+// 卡片活动展示开关（由 config 同步）
+let showActivity = true; // 显示"当前动作"（执行的工具 / 等待的问题）
+let showTimeline = true; // 显示迷你活动时间线 sparkline
+
+// 迷你活动时间线：把 activity（每桶事件计数）画成一排高低不一的细条
+function sparklineHtml(activity) {
+  if (!showTimeline || !Array.isArray(activity) || !activity.length) return '';
+  const max = Math.max(1, ...activity);
+  if (max <= 0) return '';
+  const bars = activity
+    .map((v) => {
+      const h = v > 0 ? Math.max(18, Math.round((v / max) * 100)) : 0;
+      return `<i style="height:${h}%"></i>`;
+    })
+    .join('');
+  return `<div class="spark" title="近 10 分钟活动">${bars}</div>`;
+}
+
+// "当前动作"行：运行中显示正在执行的工具；等待你时显示 agent 抛出的问题
+function activityHtml(s) {
+  if (!showActivity) return '';
+  if ((s.state === 'running' || s.state === 'stuck') && s.runningTool) {
+    return `<div class="card-act"><span class="act-ic">⚙</span>执行 ${esc(s.runningTool)}</div>`;
+  }
+  if (s.state === 'waiting' && s.question) {
+    return `<div class="card-act wait"><span class="act-ic">💬</span>${esc(s.question)}</div>`;
+  }
+  return '';
+}
+
 const STATE_LABEL = {
   running: '运行中',
   waiting: '等待你',
@@ -99,6 +129,8 @@ function render(sessions) {
             ${timeTxt ? `<span>· ${timeTxt}</span>` : ''}
             <span class="ws">· ${esc(s.workspaceName || '—')}${reason}</span>
           </div>
+          ${activityHtml(s)}
+          ${sparklineHtml(s.activity)}
         </div>
         ${timeTxt ? `<span class="card-mini-time">${timeTxt}</span>` : ''}
         ${btn}
@@ -268,6 +300,136 @@ document.getElementById('btn-settings-close').addEventListener('click', () => {
 });
 document.getElementById('btn-hide').addEventListener('click', () => window.api.hideWindow());
 document.getElementById('btn-quit').addEventListener('click', () => window.api.quit());
+
+/* ---------- 任务战报 / 历史统计 ---------- */
+const statsEl = document.getElementById('stats');
+let statsRange = 'today';
+let statsLoading = false;
+
+function fmtDurLong(ms) {
+  if (!ms || ms < 0) return '0秒';
+  return fmtDur(ms) || '0秒';
+}
+
+async function loadStats() {
+  if (statsLoading) return;
+  statsLoading = true;
+  const metricsEl = document.getElementById('stats-metrics');
+  if (metricsEl && !metricsEl.children.length) metricsEl.innerHTML = '<div class="stats-loading">统计中…</div>';
+  try {
+    const data = await window.api.getStats(statsRange);
+    renderStats(data);
+  } catch (e) {
+    const note = document.getElementById('stats-note');
+    if (note) note.textContent = '统计失败：' + ((e && e.message) || '未知错误');
+  }
+  statsLoading = false;
+}
+
+function renderStats(data) {
+  const metricsEl = document.getElementById('stats-metrics');
+  const chartEl = document.getElementById('stats-chart');
+  const wsEl = document.getElementById('stats-ws');
+  const modelEl = document.getElementById('stats-model');
+  const failEl = document.getElementById('stats-fail');
+  const noteEl = document.getElementById('stats-note');
+  const failBlock = document.getElementById('stats-fail-block');
+  if (!data || !data.ok) {
+    if (metricsEl) metricsEl.innerHTML = '';
+    if (noteEl) noteEl.textContent = '统计失败：' + ((data && data.error) || '未知错误');
+    return;
+  }
+  const t = data.totals;
+
+  // —— 指标磁贴 —— //
+  metricsEl.innerHTML = `
+    <div class="metric done"><b>${t.done}</b><span>完成</span></div>
+    <div class="metric failed"><b>${t.failed}</b><span>出错</span></div>
+    <div class="metric cancelled"><b>${t.cancelled}</b><span>取消</span></div>
+    <div class="metric total"><b>${t.turns}</b><span>总轮次</span></div>
+    <div class="metric-line">agent 活跃 <b>${fmtDurLong(t.activeMs)}</b> · 平均单轮 <b>${fmtDurLong(t.avgMs)}</b> · 最长 <b>${fmtDurLong(t.maxMs)}</b></div>`;
+
+  // —— 时间直方图 —— //
+  const b = data.buckets || { labels: [], done: [], failed: [] };
+  const n = (b.done || []).length;
+  let maxTot = 1;
+  for (let i = 0; i < n; i++) maxTot = Math.max(maxTot, (b.done[i] || 0) + (b.failed[i] || 0));
+  if (t.turns === 0) {
+    chartEl.innerHTML = '<div class="stats-empty">该时段暂无结束的回合</div>';
+  } else {
+    const bars = [];
+    for (let i = 0; i < n; i++) {
+      const dv = b.done[i] || 0;
+      const fv = b.failed[i] || 0;
+      const dh = Math.round((dv / maxTot) * 100);
+      const fh = Math.round((fv / maxTot) * 100);
+      const lb = b.labels[i] || '';
+      bars.push(
+        `<div class="cbar" title="${esc(lb || '')} 完成 ${dv} · 出错 ${fv}">
+          <div class="cbar-stack"><i class="cf" style="height:${fh}%"></i><i class="cd" style="height:${dh}%"></i></div>
+          <span class="cbar-lb">${esc(lb)}</span>
+        </div>`
+      );
+    }
+    chartEl.innerHTML = `<div class="chart-bars">${bars.join('')}</div>`;
+  }
+
+  // —— 列表：工作区 / 模型 / 失败原因 —— //
+  wsEl.innerHTML = listRows(
+    data.byWorkspace,
+    (r) => `${r.turns} 轮 · 完成 ${r.done}${r.failed ? ` · <span class="c-fail">出错 ${r.failed}</span>` : ''}`
+  );
+  modelEl.innerHTML = listRows(
+    data.byModel,
+    (r) => `${r.turns} 轮 · ${fmtDurLong(r.activeMs)}`
+  );
+  if (data.failReasons && data.failReasons.length) {
+    failBlock.classList.remove('hidden');
+    failEl.innerHTML = data.failReasons
+      .map(
+        (r) =>
+          `<div class="stats-row"><span class="stats-row-name">${esc(r.reason)}</span><span class="stats-row-val c-fail">× ${r.count}</span></div>`
+      )
+      .join('');
+  } else {
+    failBlock.classList.add('hidden');
+  }
+
+  if (noteEl) {
+    noteEl.textContent = `已扫描 ${data.sessionsScanned} 个会话 · 仅统计 Kiro 会话，模型为近似归属`;
+  }
+}
+
+function listRows(arr, valFn) {
+  if (!arr || !arr.length) return '<div class="stats-empty">暂无数据</div>';
+  return arr
+    .map(
+      (r) =>
+        `<div class="stats-row"><span class="stats-row-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="stats-row-val">${valFn(r)}</span></div>`
+    )
+    .join('');
+}
+
+const btnStats = document.getElementById('btn-stats');
+if (btnStats) {
+  btnStats.addEventListener('click', () => {
+    statsEl.classList.remove('hidden');
+    loadStats();
+  });
+}
+const btnStatsClose = document.getElementById('btn-stats-close');
+if (btnStatsClose) {
+  btnStatsClose.addEventListener('click', () => statsEl.classList.add('hidden'));
+}
+document.querySelectorAll('.stats-range .seg').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const r = btn.getAttribute('data-range');
+    if (r === statsRange) return;
+    statsRange = r;
+    document.querySelectorAll('.stats-range .seg').forEach((b) => b.classList.toggle('active', b === btn));
+    loadStats();
+  });
+});
 
 function bindSettings(config) {
   document.querySelectorAll('[data-cfg]').forEach((el) => {
@@ -530,6 +692,8 @@ window.api.onSessions(({ sessions, config, usage, permissions }) => {
   if (permissions) renderPermissions(permissions); // 先更新授权状态，空态文案才准
   render(sessions || []);
   if (config && 'showUsage' in config) showUsage = !!config.showUsage;
+  if (config && 'showActivity' in config) showActivity = config.showActivity !== false;
+  if (config && 'showTimeline' in config) showTimeline = config.showTimeline !== false;
   if (config && 'compactMode' in config) {
     compact = !!config.compactMode;
     applyCompact();
@@ -543,6 +707,8 @@ window.api.onSessions(({ sessions, config, usage, permissions }) => {
 (async () => {
   const cfg = await window.api.getConfig();
   showUsage = cfg.showUsage !== false;
+  showActivity = cfg.showActivity !== false;
+  showTimeline = cfg.showTimeline !== false;
   compact = !!cfg.compactMode;
   applyCompact();
   bindSettings(cfg);
@@ -560,6 +726,21 @@ window.api.onSessions(({ sessions, config, usage, permissions }) => {
     compactToggle.addEventListener('change', () => {
       compact = compactToggle.checked;
       applyCompact();
+    });
+  }
+  // 「当前动作」「迷你时间线」开关即时重绘卡片
+  const activityToggle = document.querySelector('[data-cfg="showActivity"]');
+  if (activityToggle) {
+    activityToggle.addEventListener('change', () => {
+      showActivity = activityToggle.checked;
+      render(currentSessions);
+    });
+  }
+  const timelineToggle = document.querySelector('[data-cfg="showTimeline"]');
+  if (timelineToggle) {
+    timelineToggle.addEventListener('change', () => {
+      showTimeline = timelineToggle.checked;
+      render(currentSessions);
     });
   }
   // 先拿授权自检结果，空态/横幅首帧就准确

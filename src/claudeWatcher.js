@@ -233,6 +233,7 @@ function scanClaudeSessions(opts = {}) {
       stopReason: '',
       question: '',
       runningTool: '',
+      activity: [], // Claude 无事件密度时间线（终端 transcript 不逐事件落盘）
       elapsedMs,
       idleMs: now - lastActivityMs,
       turnDurationMs,
