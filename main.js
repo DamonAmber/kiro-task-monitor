@@ -768,6 +768,16 @@ function pushWebState() {
   if (win && !win.isDestroyed()) win.webContents.send('web:state', getWebState());
 }
 
+// 桌面端的"显示"类开关（用量条 / 当前动作 / 迷你时间线）也要让局域网网页遵循，
+// 否则在电脑上关掉了、手机端还照显。随快照一起下发给网页端。
+function webUiFlags() {
+  return {
+    showUsage: config.get('showUsage') !== false,
+    showActivity: config.get('showActivity') !== false,
+    showTimeline: config.get('showTimeline') !== false,
+  };
+}
+
 async function startWebServer() {
   ensureWebSecrets();
   try {
@@ -779,6 +789,7 @@ async function startWebServer() {
         sessions: lastSessions,
         usage: lastUsage,
         permissions: lastPermissions,
+        ui: webUiFlags(),
         serverTime: Date.now(),
       }),
     });
@@ -813,6 +824,7 @@ function broadcastWeb() {
       sessions: lastSessions,
       usage: lastUsage,
       permissions: lastPermissions,
+      ui: webUiFlags(),
       serverTime: Date.now(),
     });
   }
@@ -910,6 +922,10 @@ function registerIpc() {
     if (patch && 'usagePollMs' in patch) startUsagePolling();
     if (patch && 'alwaysOnTop' in patch && win) win.setAlwaysOnTop(!!patch.alwaysOnTop, 'floating');
     if (patch && 'compactMode' in patch) applyCompactMode(!!patch.compactMode);
+    // 显示类开关变更 → 立即推给局域网网页（否则要等下一次轮询才生效）
+    if (patch && ('showUsage' in patch || 'showActivity' in patch || 'showTimeline' in patch)) {
+      broadcastWeb();
+    }
     return data;
   });
   ipcMain.handle('session:retry', async (_e, payload) => {

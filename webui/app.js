@@ -19,6 +19,8 @@ const permBannerEl = document.getElementById('perm-banner');
 const permBannerTextEl = document.getElementById('perm-banner-text');
 
 let lastPermissions = null;
+// 桌面端下发的"显示"类开关（用量条 / 当前动作 / 迷你时间线）——网页端跟随生效
+let ui = { showUsage: true, showActivity: true, showTimeline: true };
 
 const STATE_LABEL = {
   running: '运行中',
@@ -50,7 +52,7 @@ function fmtDur(ms) {
 
 // 迷你活动时间线：把 activity（每桶事件计数）画成一排细条
 function sparklineHtml(activity) {
-  if (!Array.isArray(activity) || !activity.length) return '';
+  if (!ui.showTimeline || !Array.isArray(activity) || !activity.length) return '';
   const max = Math.max(1, ...activity);
   if (max <= 0) return '';
   const bars = activity
@@ -61,6 +63,7 @@ function sparklineHtml(activity) {
 
 // "当前动作"行：运行中显示正在执行的工具；等待你时显示 agent 抛出的问题
 function activityHtml(s) {
+  if (!ui.showActivity) return '';
   if ((s.state === 'running' || s.state === 'stuck') && s.runningTool) {
     return `<div class="card-act">⚙ 执行 ${esc(s.runningTool)}</div>`;
   }
@@ -180,7 +183,7 @@ function fmtReset(iso) {
   return `${d.getMonth() + 1}月${d.getDate()}日重置`;
 }
 function renderUsage(u) {
-  if (!u || !u.ok || !u.primary) {
+  if (!ui.showUsage || !u || !u.ok || !u.primary) {
     usageEl.classList.add('hidden');
     return;
   }
@@ -358,6 +361,7 @@ function applyPayload(payload) {
   if (!payload) return;
   sessions = payload.sessions || [];
   receivedAt = Date.now();
+  if (payload.ui) ui = payload.ui; // 跟随桌面端的显示开关（用量/当前动作/时间线）
   if ('permissions' in payload) renderPermissions(payload.permissions);
   detectTransitions(sessions);
   render();
