@@ -792,6 +792,14 @@ async function startWebServer() {
         ui: webUiFlags(),
         serverTime: Date.now(),
       }),
+      // 局域网网页的任务战报（只读，按需计算，与桌面端同源）
+      getStats: (range) => {
+        try {
+          return buildStats({ range, now: Date.now() });
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || String(e) };
+        }
+      },
     });
     webInfo = { running: true, error: '', ...info };
     console.log(

@@ -201,6 +201,19 @@ async function handle(req, res) {
     return send(res, 200, JSON.stringify(snap), { 'Content-Type': MIME['.json'] });
   }
 
+  // 任务战报（只读，按需计算）。range: today | 7d
+  if (pathname === '/api/stats') {
+    if (!isAuthed(req)) return send(res, 401, JSON.stringify({ ok: false, needLogin: true }), { 'Content-Type': MIME['.json'] });
+    let range = 'today';
+    try {
+      range = new URL(req.url, 'http://x').searchParams.get('range') === '7d' ? '7d' : 'today';
+    } catch {
+      range = 'today';
+    }
+    const data = (opts.getStats && opts.getStats(range)) || { ok: false, error: 'unavailable' };
+    return send(res, 200, JSON.stringify(data), { 'Content-Type': MIME['.json'] });
+  }
+
   if (pathname === '/api/stream') {
     if (!isAuthed(req)) return send(res, 401, 'unauthorized', { 'Content-Type': 'text/plain; charset=utf-8' });
     res.writeHead(200, {

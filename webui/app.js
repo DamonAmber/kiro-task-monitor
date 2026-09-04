@@ -99,7 +99,7 @@ function renderCounts() {
   if (waiting) segs.push(`<b class="c-wait">${waiting} 等待你</b>`);
   if (running) segs.push(`<b class="c-run">${running} 运行中</b>`);
   countsEl.innerHTML = sessions.length
-    ? `${sessions.length} 个${segs.length ? ' · ' + segs.join(' · ') : ''}`
+    ? `共 ${sessions.length} 个${segs.length ? ' · ' + segs.join(' · ') : ''}`
     : '';
 }
 
@@ -355,6 +355,128 @@ function detectTransitions(list) {
 
 if (notifBtn) notifBtn.addEventListener('click', toggleNotif);
 syncNotifBtn();
+
+/* ---------- 任务战报（只读，通过 /api/stats 拉取，渲染与桌面端一致） ---------- */
+const statsEl = document.getElementById('stats');
+let statsRange = 'today';
+let statsLoading = false;
+
+function fmtDurLong(ms) {
+  if (!ms || ms < 0) return '0秒';
+  return fmtDur(ms) || '0秒';
+}
+
+async function loadStats() {
+  if (statsLoading) return;
+  statsLoading = true;
+  const metricsEl = document.getElementById('stats-metrics');
+  if (metricsEl && !metricsEl.children.length) metricsEl.innerHTML = '<div class="stats-loading">统计中…</div>';
+  try {
+    const res = await fetch('/api/stats?range=' + encodeURIComponent(statsRange));
+    if (res.status === 401) {
+      location.replace('/');
+      return;
+    }
+    renderStats(await res.json());
+  } catch (e) {
+    const note = document.getElementById('stats-note');
+    if (note) note.textContent = '统计失败：' + ((e && e.message) || '未知错误');
+  }
+  statsLoading = false;
+}
+
+function statsListRows(arr, valFn) {
+  if (!arr || !arr.length) return '<div class="stats-empty">暂无数据</div>';
+  return arr
+    .map(
+      (r) =>
+        `<div class="stats-row"><span class="stats-row-name">${esc(r.name)}</span><span class="stats-row-val">${valFn(r)}</span></div>`
+    )
+    .join('');
+}
+
+function renderStats(data) {
+  const metricsEl = document.getElementById('stats-metrics');
+  const chartEl = document.getElementById('stats-chart');
+  const wsEl = document.getElementById('stats-ws');
+  const modelEl = document.getElementById('stats-model');
+  const failEl = document.getElementById('stats-fail');
+  const failBlock = document.getElementById('stats-fail-block');
+  const noteEl = document.getElementById('stats-note');
+  if (!data || !data.ok) {
+    if (metricsEl) metricsEl.innerHTML = '';
+    if (noteEl) noteEl.textContent = '统计失败：' + ((data && data.error) || '未知错误');
+    return;
+  }
+  const t = data.totals;
+  metricsEl.innerHTML = `
+    <div class="metric done"><b>${t.done}</b><span>完成</span></div>
+    <div class="metric failed"><b>${t.failed}</b><span>出错</span></div>
+    <div class="metric cancelled"><b>${t.cancelled}</b><span>取消</span></div>
+    <div class="metric total"><b>${t.turns}</b><span>总轮次</span></div>
+    <div class="metric-line">agent 活跃 <b>${fmtDurLong(t.activeMs)}</b> · 平均单轮 <b>${fmtDurLong(t.avgMs)}</b> · 最长 <b>${fmtDurLong(t.maxMs)}</b></div>`;
+
+  const b = data.buckets || { labels: [], done: [], failed: [] };
+  const n = (b.done || []).length;
+  let maxTot = 1;
+  for (let i = 0; i < n; i++) maxTot = Math.max(maxTot, (b.done[i] || 0) + (b.failed[i] || 0));
+  if (t.turns === 0) {
+    chartEl.innerHTML = '<div class="stats-empty">该时段暂无结束的回合</div>';
+  } else {
+    const bars = [];
+    for (let i = 0; i < n; i++) {
+      const dv = b.done[i] || 0;
+      const fv = b.failed[i] || 0;
+      const dh = Math.round((dv / maxTot) * 100);
+      const fh = Math.round((fv / maxTot) * 100);
+      const lb = b.labels[i] || '';
+      bars.push(
+        `<div class="cbar" title="${esc(lb)} 完成 ${dv} · 出错 ${fv}">
+          <div class="cbar-stack"><i class="cf" style="height:${fh}%"></i><i class="cd" style="height:${dh}%"></i></div>
+          <span class="cbar-lb">${esc(lb)}</span>
+        </div>`
+      );
+    }
+    chartEl.innerHTML = `<div class="chart-bars">${bars.join('')}</div>`;
+  }
+
+  wsEl.innerHTML = statsListRows(
+    data.byWorkspace,
+    (r) => `${r.turns} 轮 · 完成 ${r.done}${r.failed ? ` · <span class="c-fail">出错 ${r.failed}</span>` : ''}`
+  );
+  modelEl.innerHTML = statsListRows(data.byModel, (r) => `${r.turns} 轮 · ${fmtDurLong(r.activeMs)}`);
+  if (data.failReasons && data.failReasons.length) {
+    failBlock.classList.remove('hidden');
+    failEl.innerHTML = data.failReasons
+      .map(
+        (r) =>
+          `<div class="stats-row"><span class="stats-row-name">${esc(r.reason)}</span><span class="stats-row-val c-fail">× ${r.count}</span></div>`
+      )
+      .join('');
+  } else {
+    failBlock.classList.add('hidden');
+  }
+  if (noteEl) noteEl.textContent = `已扫描 ${data.sessionsScanned} 个会话 · 仅统计 Kiro 会话，模型为近似归属`;
+}
+
+const btnStats = document.getElementById('btn-stats');
+if (btnStats) {
+  btnStats.addEventListener('click', () => {
+    statsEl.classList.remove('hidden');
+    loadStats();
+  });
+}
+const btnStatsClose = document.getElementById('btn-stats-close');
+if (btnStatsClose) btnStatsClose.addEventListener('click', () => statsEl.classList.add('hidden'));
+document.querySelectorAll('.stats-range .seg').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const r = btn.getAttribute('data-range');
+    if (r === statsRange) return;
+    statsRange = r;
+    document.querySelectorAll('.stats-range .seg').forEach((x) => x.classList.toggle('active', x === btn));
+    loadStats();
+  });
+});
 
 /* ---------- 数据流 ---------- */
 function applyPayload(payload) {
