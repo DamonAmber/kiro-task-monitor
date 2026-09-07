@@ -46,7 +46,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   background: rgba(20, 20, 24, 0.85);
@@ -60,26 +61,36 @@ body {
   align-items: center;
   gap: 9px;
   min-width: 0;
+  /* 占据左侧剩余空间，把计数/按钮推到右侧；空间不足时品牌名收缩省略 */
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 .logo {
   font-size: 20px;
   color: var(--running);
+  flex: 0 0 auto;
 }
 .brand {
   font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .topbar-right {
   display: flex;
   align-items: center;
   gap: 12px;
   flex: 0 0 auto;
+  order: 1;
 }
 .counts {
   font-size: 13px;
   color: var(--text-dim);
-  white-space: nowrap;
+  line-height: 1.4;
+  /* 窄屏：整体换到品牌名下方第二行，避免与标题重叠 */
+  order: 2;
+  flex: 0 0 100%;
 }
 .counts b {
   font-weight: 600;
@@ -92,6 +103,17 @@ body {
 }
 .counts .c-run {
   color: var(--running);
+}
+/* 宽屏：计数回到顶栏第一行，紧贴右侧按钮组（窄屏则换到第二行） */
+@media (min-width: 560px) {
+  .counts {
+    order: 0;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .topbar-right {
+    order: 0;
+  }
 }
 .conn {
   display: inline-flex;
