@@ -485,6 +485,11 @@ function applyOpenWindowFilter(sessions, opts = {}) {
 
 // 「活跃 / 需要你处理」的会话：运行中 · 等待你 · 出错 · 卡住。
 const ATTENTION_STATES = new Set([STATE.RUNNING, STATE.WAITING, STATE.FAILED, STATE.STUCK]);
+// 「进行时」会话：agent 仍活着（运行中 / 等待你确认）。这类会话在窗口刚打开时可能还没写进
+// Kiro 的会话面板列表（面板状态周期性落盘、会滞后），因此只要工作区窗口开着就无条件显示，
+// 避免漏报正在进行的会话。区别于「过去时」的出错 / 卡住——那是已发生、不会自我更新的历史事件，
+// 需按面板确认「用户是否还开着这个 tab」，否则关掉的出错会话会一直挂着报错（误报）。
+const LIVE_STATES = new Set([STATE.RUNNING, STATE.WAITING]);
 // 窗口状态识别不到该会话所属工作区时的护栏放宽到 30min，覆盖「正在跑长工具、长时间无写入」
 // 的运行会话（否则会被误当残留隐藏），同时仍能滤掉早已结束的老残留。
 const UNMATCHED_GRACE_MS = 30 * 60 * 1000;
@@ -501,16 +506,26 @@ function visibilityDecision(s, ctx, { onlyOpen = true, onlyFocused = false } = {
   const windowOpen = ctx.openFolders.has(f);
 
   if (windowOpen) {
-    // 窗口就开着 → 不是历史残留。窗口里的**活跃会话一律显示**，无论面板是否已收录、静默多久
-    // （Kiro 的窗口/面板状态周期性落盘、会滞后；刚打开 App 时正在跑的会话常还没写进面板列表）。
-    if (isActive) return { shown: true, reason: 'window-open-active' };
     const panels = ctx.panelsByFolder.get(f);
-    if (!panels || !panels.readable) return { shown: true, reason: 'window-open-panels-unknown' };
+    const panelsReadable = !!(panels && panels.readable);
+
+    // 「进行时」会话（运行中 / 等待你）无条件显示：Kiro 面板状态周期性落盘、会滞后，
+    // 刚跑起来的会话常还没写进面板列表，若按面板过滤会漏报——正在进行的会话优先保证可见。
+    if (LIVE_STATES.has(s.state)) return { shown: true, reason: 'window-open-live' };
+
+    // 面板读不到 → 无法判断该会话 tab 是否还开着，保守保留（避免误杀）。
+    if (!panelsReadable) return { shown: true, reason: 'window-open-panels-unknown' };
+
     if (onlyFocused) {
       return s.id && s.id === panels.focused
         ? { shown: true, reason: 'focused' }
         : { shown: false, reason: 'not-focused' }; // 开了「只看当前会话」，此会话非聚焦标签
     }
+
+    // 其余会话——含「过去时」的出错 / 卡住 / 已中断，以及已完成 / 空闲——仅当其 tab 仍在该窗口
+    // 的会话面板列表里时才显示。出错 / 卡住是已发生、不会自我更新的历史事件：用户一旦关闭它的 tab
+    //（不在面板列表里），说明已不再关注，就不该继续霸占列表顶部报错——否则同工作区开了新会话后，
+    // 早先关掉的出错会话会一直挂着（这正是「已经在做别的了，出错却卡着不消失」的误报根源）。
     return s.id && panels.ids.has(s.id)
       ? { shown: true, reason: 'in-panels' }
       : { shown: false, reason: 'not-in-panels' }; // 窗口开着但不在该窗口的会话面板列表里

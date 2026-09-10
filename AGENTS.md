@@ -64,10 +64,13 @@ electron-builder.yml 打包/签名/公证/发布配置
   （当前打开/激活的窗口）与各窗口 `workspaceStorage/<hash>/state.vscdb`（`kiro.kiroAgent.sessionPanels.entries/focused`，
   用系统 `sqlite3 -readonly` 读），据此过滤历史残留会话并标注 `isFocused`。读不到时安全回退为不过滤。
   ⚠️ 这份窗口/面板状态是 VS Code 内核**周期性落盘、会滞后**的（还可能因多根工作区 /
-  路径不匹配而对不上）。`applyOpenWindowFilter` 因此是**窗口感知**的，务必保留两条规则，
-  否则会重现「Kiro 在跑但监控里看不到活跃会话」：
-    1) 工作区窗口开着 → 里面的**活跃会话（running/waiting/failed/stuck）一律显示**，
-       无论 Kiro 面板是否已收录、无论静默多久；
+  路径不匹配而对不上）。`applyOpenWindowFilter` 因此是**窗口感知**的，务必保留下列规则，
+  否则会重现「Kiro 在跑但监控里看不到活跃会话」或「出错会话卡着不消失」：
+    1) 工作区窗口开着 + **进行时**会话（running/waiting，`LIVE_STATES`）→ **一律显示**，
+       无论 Kiro 面板是否已收录、无论静默多久（面板落盘滞后，刚跑起来的会话常还没进面板，不能漏报）；
+    1b) 工作区窗口开着 + **过去时**会话（failed/stuck，已发生、不会自我更新）→ 需其 tab 仍在该窗口的
+       会话面板列表（`panels.ids`）里才显示；面板读不到时保守显示。**关键**：用户关掉出错会话的 tab 后
+       它就从面板列表消失、不再显示——否则同工作区开了新会话后，早先关掉的出错会一直挂在顶部报错（误报）。
     2) 匹配不到打开的窗口 → 仅当「活跃 + 近 30min 有活动」才显示（护栏，滤掉老残留）。
   这两条规则的判定已抽成纯函数 `watcher.visibilityDecision(s, ctx, opts) → {shown, reason}`，
   是过滤逻辑的**唯一真源**：`applyOpenWindowFilter` 与 `diagnostics.js`（解释「为何没看到某会话」）共用它，
