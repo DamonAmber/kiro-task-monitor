@@ -58,6 +58,10 @@ const DEFAULTS = {
 // 解压保护：单文件超过该压缩体积时只解压尾部窗口（避免病态巨型会话拖慢轮询）
 const MAX_COMPRESSED_BYTES = 16 * 1024 * 1024;
 const TAIL_WINDOW_BYTES = 4 * 1024 * 1024;
+// ★冷启动只读尾部窗口：会话首次出现（或流损坏/被截短需重建）时，只解压末尾这么多压缩字节，
+// 避免对既有大文件（实测可达 5MB→全量解压 2.5s）在主线程一次性阻塞数秒。之后走增量、只喂新字节。
+// 256KB 压缩尾部通常已覆盖最近一个回合的全部事件；更早的 turn/start 若滚出窗口，由 sawTurn 兜底。
+const COLD_TAIL_BYTES = 256 * 1024;
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]); // zstd 帧起始魔数
 const ACTIVITY_MAX_TS = 200; // 迷你时间线保留的事件时间戳个数上限
 
@@ -136,84 +140,116 @@ function decompressSession(buf) {
 
 /* ------------------------------------------------------------------ *
  * 事件流解析 → 状态信号（对标 watcher.parseSignals）
+ *
+ * ★性能关键：解析是**增量**的——每个会话维护一份可变的累积状态(parseState)，每次只把**新追加**
+ * 的事件行 feed 进去（配合下方常驻流式解压器只喂新字节），避免每轮 poll 全量重解压+重解析
+ * 整个（可达数 MB 的）会话文件。这是修复「新版本卡顿/主线程被同步阻塞数秒」的核心。
  * ------------------------------------------------------------------ */
-/**
- * 顺序遍历事件（文件按追加顺序落盘），维护「当前回合是否未闭合、在途工具、未决授权」等信号。
- * @param {string} text 解压后的 JSONL 文本
- */
-function parseDshEvents(text) {
-  let openTurn = false;
-  let curTurnStartTs = 0;
-  let lastEndReason = '';
-  let lastEndTs = 0;
-  let lastTurnDurationMs = 0;
-  let lastEventTs = 0;
-  let firstUserText = '';
-  const recentEventTs = [];
 
-  const inflightTools = new Map(); // callId → { ts, name }
-  const pendingApproval = new Map(); // id → { ts, toolName, reason }
+/** 新建一份增量解析累积状态。 */
+function makeParseState() {
+  return {
+    openTurn: false,
+    curTurnStartTs: 0,
+    lastEndReason: '',
+    lastEndTs: 0,
+    lastTurnDurationMs: 0,
+    lastEventTs: 0,
+    firstUserText: '',
+    recentEventTs: [], // 保留末尾若干个（buildActivity 用）
+    inflightTools: new Map(), // callId → { ts, name }
+    pendingApproval: new Map(), // id → { ts, toolName, reason }
+    sawTurn: false, // 是否见过任何 turn/start|turn/end（冷启动只读尾部时用于识别长回合）
+  };
+}
 
-  const lines = text.split('\n');
-  for (const line of lines) {
-    const s = line.trim();
-    if (!s) continue;
-    let ev;
-    try {
-      ev = JSON.parse(s);
-    } catch {
-      continue; // 忽略损坏行
-    }
-    const type = ev && ev.type;
-    if (!type) continue;
-    const d = (ev && ev.data) || {};
-    const t = Number(ev.time) || 0;
-    if (t) {
-      if (t > lastEventTs) lastEventTs = t;
-      recentEventTs.push(t);
-    }
+// 只关心的事件类型；其余（海量 reasoning-chunks/text-chunks/assistant-chunk 等流式碎片）
+// 直接跳过，省掉昂贵的 JSON.parse——这是冷启动解析提速的关键。
+const HANDLED_TYPES = new Set([
+  'turn/start',
+  'turn/end',
+  'tool/call',
+  'tool/result',
+  'approval/asked',
+  'approval/decided',
+  'user/message',
+]);
+// 快速提取行首的 "type":"..."（dsh 事件的 type 恒为首个字段）
+const TYPE_HEAD_RE = /^\{\s*"type"\s*:\s*"([^"]+)"/;
 
-    switch (type) {
-      case 'turn/start':
-        openTurn = true;
-        curTurnStartTs = t || curTurnStartTs;
-        break;
-      case 'turn/end':
-        openTurn = false;
-        lastEndReason = (d.reason && d.reason.kind) || 'completed';
-        lastEndTs = t || lastEndTs;
-        lastTurnDurationMs = curTurnStartTs && t ? Math.max(0, t - curTurnStartTs) : 0;
-        inflightTools.clear(); // 一轮结束，遗留在途工具作废
-        break;
-      case 'tool/call':
-        if (d.callId) inflightTools.set(d.callId, { ts: t, name: d.name || '' });
-        break;
-      case 'tool/result': {
-        // ⚠️ tool/result 的 callId 不在 data.callId，而在 data.message.source.callId
-        //（call 用 data.callId，result 用 message.source.callId / content[].toolCallId）。
-        const cid = resultCallId(d);
-        if (cid) inflightTools.delete(cid);
-        break;
-      }
-      case 'approval/asked':
-        if (d.id) pendingApproval.set(d.id, { ts: t, toolName: d.toolName || '', reason: d.reason || '' });
-        break;
-      case 'approval/decided':
-        if (d.id) pendingApproval.delete(d.id);
-        break;
-      case 'user/message':
-        if (!firstUserText) firstUserText = extractUserText(d);
-        break;
-      default:
-        break;
+/** 把一行 JSON 事件增量喂入累积状态（顺序遍历，事件按追加顺序落盘，天然支持增量）。 */
+function feedLine(st, line) {
+  const s = line.trim();
+  if (!s) return;
+  // 廉价预筛：type 恒为首字段，先用正则取出。若命中且非关心类型 → 直接跳过（不 JSON.parse）。
+  // 取不到 type（罕见的非常规行）→ 落到完整解析兜底，保证不漏判。
+  const head = TYPE_HEAD_RE.exec(s);
+  if (head && !HANDLED_TYPES.has(head[1])) return;
+
+  let ev;
+  try {
+    ev = JSON.parse(s);
+  } catch {
+    return; // 忽略损坏/半行
+  }
+  const type = ev && ev.type;
+  if (!type) return;
+  const d = (ev && ev.data) || {};
+  const t = Number(ev.time) || 0;
+  if (t) {
+    if (t > st.lastEventTs) st.lastEventTs = t;
+    st.recentEventTs.push(t);
+    // 增量场景下 recentEventTs 会持续增长，及时截断到上限，防内存无界增长
+    if (st.recentEventTs.length > ACTIVITY_MAX_TS * 2) {
+      st.recentEventTs = st.recentEventTs.slice(-ACTIVITY_MAX_TS);
     }
   }
 
+  switch (type) {
+    case 'turn/start':
+      st.openTurn = true;
+      st.sawTurn = true;
+      st.curTurnStartTs = t || st.curTurnStartTs;
+      break;
+    case 'turn/end':
+      st.openTurn = false;
+      st.sawTurn = true;
+      st.lastEndReason = (d.reason && d.reason.kind) || 'completed';
+      st.lastEndTs = t || st.lastEndTs;
+      st.lastTurnDurationMs = st.curTurnStartTs && t ? Math.max(0, t - st.curTurnStartTs) : 0;
+      st.inflightTools.clear(); // 一轮结束，遗留在途工具作废
+      break;
+    case 'tool/call':
+      if (d.callId) st.inflightTools.set(d.callId, { ts: t, name: d.name || '' });
+      break;
+    case 'tool/result': {
+      // ⚠️ tool/result 的 callId 不在 data.callId，而在 data.message.source.callId
+      //（call 用 data.callId，result 用 message.source.callId / content[].toolCallId）。
+      const cid = resultCallId(d);
+      if (cid) st.inflightTools.delete(cid);
+      break;
+    }
+    case 'approval/asked':
+      if (d.id) st.pendingApproval.set(d.id, { ts: t, toolName: d.toolName || '', reason: d.reason || '' });
+      break;
+    case 'approval/decided':
+      if (d.id) st.pendingApproval.delete(d.id);
+      break;
+    case 'user/message':
+      if (!st.firstUserText) st.firstUserText = extractUserText(d);
+      break;
+    default:
+      break;
+  }
+}
+
+/** 由累积状态计算 decideDshState 所需的派生信号（在途工具、未决授权、活动时间线）。 */
+function finalizeSignals(st) {
   // 最近一个在途工具（仅在回合未闭合时有意义）
   let inflightToolTs = 0;
   let inflightToolName = '';
-  if (openTurn) {
-    for (const it of inflightTools.values()) {
+  if (st.openTurn) {
+    for (const it of st.inflightTools.values()) {
       if (it.ts >= inflightToolTs) {
         inflightToolTs = it.ts;
         inflightToolName = it.name;
@@ -222,26 +258,36 @@ function parseDshEvents(text) {
   }
   // 最近一个未决授权（仅回合未闭合时才视为「等你授权」）
   let openApproval = null;
-  if (openTurn && pendingApproval.size > 0) {
-    for (const a of pendingApproval.values()) {
+  if (st.openTurn && st.pendingApproval.size > 0) {
+    for (const a of st.pendingApproval.values()) {
       if (!openApproval || a.ts >= openApproval.ts) openApproval = a;
     }
   }
-
   return {
-    openTurn,
-    curTurnStartTs,
-    lastEndReason,
-    lastEndTs,
-    lastTurnDurationMs,
-    lastEventTs,
-    firstUserText,
+    openTurn: st.openTurn,
+    curTurnStartTs: st.curTurnStartTs,
+    lastEndReason: st.lastEndReason,
+    lastEndTs: st.lastEndTs,
+    lastTurnDurationMs: st.lastTurnDurationMs,
+    lastEventTs: st.lastEventTs,
+    firstUserText: st.firstUserText,
     inflightToolTs,
     inflightToolName,
     openApproval,
+    sawTurn: st.sawTurn,
     recentEventTs:
-      recentEventTs.length > ACTIVITY_MAX_TS ? recentEventTs.slice(-ACTIVITY_MAX_TS) : recentEventTs,
+      st.recentEventTs.length > ACTIVITY_MAX_TS
+        ? st.recentEventTs.slice(-ACTIVITY_MAX_TS)
+        : st.recentEventTs,
   };
+}
+
+/** 一次性解析（测试/CLI 便捷用；热路径走增量的 feedLine）。 */
+function parseDshEvents(text) {
+  const st = makeParseState();
+  const lines = text.split('\n');
+  for (const line of lines) feedLine(st, line);
+  return finalizeSignals(st);
 }
 
 /** 从 tool/result.data 提取其对应的 callId（多处兜底：source.callId → content[].toolCallId → callId）。 */
@@ -290,6 +336,7 @@ function decideDshState(sig, fallback, mtimeMs, now, opts) {
   const toolStuckMs = (opts && opts.toolStuckMs) || DEFAULTS.toolStuckMs;
   const stuckDetection = !(opts && opts.stuckDetection === false);
   const serverAlive = opts ? opts.dshServerAlive : undefined;
+  const coldTail = !!(opts && opts.coldTail); // 冷启动只读了尾部窗口，可能漏掉更早的 turn/start
 
   let state;
   let stopReason = '';
@@ -328,8 +375,13 @@ function decideDshState(sig, fallback, mtimeMs, now, opts) {
       if (FAIL_KINDS.has(sig.lastEndReason)) state = STATE.FAILED;
       else if (CANCEL_KINDS.has(sig.lastEndReason)) state = STATE.CANCELLED;
       else state = STATE.DONE; // completed / 其它
+    } else if (coldTail && !sig.sawTurn && sig.lastEventTs > 0 && idleFor <= effectiveStuckMs) {
+      // 冷启动只读了尾部窗口、窗口内没见到任何 turn 边界，但文件仍新鲜 → 大概率是一个很长的回合
+      // 其 turn/start 已滚出尾部窗口，判为运行中（后续增量拿到 turn/end 再自动纠正）。
+      state = STATE.RUNNING;
+      elapsedMs = 0; // turn 起点未知
     } else {
-      state = STATE.IDLE; // 有事件但无 turn 生命周期
+      state = STATE.IDLE; // 有事件但无 turn 生命周期（多为刚创建、尚无回合的会话）
     }
 
     activity = buildActivity(sig.recentEventTs, now);
@@ -492,9 +544,95 @@ function listDshSessions() {
 }
 
 /* ------------------------------------------------------------------ *
+ * 常驻流式解压：每个会话保持一个 fzstd.Decompress，只喂**新追加**的字节（增量）。
+ * 这是性能修复的核心——活跃会话每轮只处理新增的几 KB，而非全量重解压整个（可达数 MB）文件。
+ * ------------------------------------------------------------------ */
+
+/** 读取文件 [start, end) 字节（用 fd 定位，避免读整文件）。失败返回空 Buffer。 */
+function readRange(zstd, start, end) {
+  const len = end - start;
+  if (len <= 0) return Buffer.alloc(0);
+  let fd;
+  try {
+    fd = fs.openSync(zstd, 'r');
+  } catch {
+    return Buffer.alloc(0);
+  }
+  try {
+    const buf = Buffer.allocUnsafe(len);
+    let read = 0;
+    while (read < len) {
+      const n = fs.readSync(fd, buf, read, len - read, start + read);
+      if (n <= 0) break;
+      read += n;
+    }
+    return read === len ? buf : buf.subarray(0, read);
+  } catch {
+    return Buffer.alloc(0);
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** 解压回调：累积解码文本、按行切分，完整行喂给增量解析器。 */
+function onDecoded(entry, chunk) {
+  entry.lineBuf += Buffer.from(chunk).toString('utf8');
+  let nl;
+  while ((nl = entry.lineBuf.indexOf('\n')) >= 0) {
+    const line = entry.lineBuf.slice(0, nl);
+    entry.lineBuf = entry.lineBuf.slice(nl + 1);
+    feedLine(entry.state, line);
+  }
+  // 异常无换行时防止 lineBuf 无界增长
+  if (entry.lineBuf.length > 1024 * 1024) entry.lineBuf = '';
+}
+
+/** 把一段原始字节喂入常驻解压器（final=false，保持流、容忍末尾半帧）；出错则标记流损坏。 */
+function pushToDec(entry, buf) {
+  if (entry.broken || !buf || !buf.length) return;
+  try {
+    entry.dec.push(new Uint8Array(buf), false);
+  } catch {
+    entry.broken = true; // 流损坏 → 下轮冷重建
+  }
+}
+
+/** 冷启动一个会话的解压流：只喂尾部窗口（超大文件不从头解压），从窗口内首个帧边界起。 */
+function coldStart(entry, zstd, size) {
+  entry.state = makeParseState();
+  entry.lineBuf = '';
+  entry.broken = false;
+  entry.dec = new fzstd.Decompress((chunk) => onDecoded(entry, chunk));
+  entry.coldTail = false;
+  let buf;
+  if (size > COLD_TAIL_BYTES) {
+    const winStart = size - COLD_TAIL_BYTES;
+    const win = readRange(zstd, winStart, size);
+    const rel = win.indexOf(ZSTD_MAGIC); // 窗口内首个帧边界（帧相互独立，可从此处解压）
+    buf = rel >= 0 ? win.subarray(rel) : win;
+    entry.coldTail = true; // 标记：可能漏掉更早的 turn/start（用 sawTurn 兜底判定）
+  } else {
+    buf = readRange(zstd, 0, size);
+  }
+  pushToDec(entry, buf);
+  entry.fedSize = size; // 已消费到文件的绝对偏移（增量从此处续读）
+}
+
+/** 增量：只读并喂入自上次以来新追加的字节。 */
+function feedDelta(entry, zstd, size) {
+  if (size <= entry.fedSize) return;
+  pushToDec(entry, readRange(zstd, entry.fedSize, size));
+  entry.fedSize = size;
+}
+
+/* ------------------------------------------------------------------ *
  * 扫描全部 dsh 会话
  * ------------------------------------------------------------------ */
-// 事件流解析缓存：zstd 路径 → { mtime, size, sig }（mtime+size 未变则复用，跳过解压+解析）
+// 常驻解压/解析缓存：zstd 路径 → { mtimeMs, fedSize, state, dec, lineBuf, broken, coldTail }
 const _sigCache = new Map();
 // 「进行时」会话：agent 仍活着（运行中 / 等你授权）。archived（用户在 dsh 里归档，相当于关闭 tab、
 // 视为已处理）后仅当仍处于进行时才显示，其余（完成/出错/卡住/取消/空闲）一律隐藏，避免旧会话堆积。
@@ -511,8 +649,9 @@ function scanDshSessions(opts = {}) {
   const stuckMs = opts.stuckMs ?? DEFAULTS.stuckMs;
   const toolStuckMs = opts.toolStuckMs ?? DEFAULTS.toolStuckMs;
   const stuckDetection = opts.stuckDetection !== false;
-  const serverAlive =
-    opts.dshServerAlive !== undefined ? opts.dshServerAlive : getDshServerAliveSync();
+  // ⚠️ 只有调用方**完全没传** dshServerAlive 键时才同步探测（CLI 用）；主进程始终传入缓存值
+  //（哪怕是 undefined），避免每轮 poll 同步 spawn pgrep 阻塞主线程。
+  const serverAlive = 'dshServerAlive' in opts ? opts.dshServerAlive : getDshServerAliveSync();
 
   const sessions = listDshSessions();
   if (!sessions.length) return [];
@@ -521,29 +660,45 @@ function scanDshSessions(opts = {}) {
   const seen = new Set();
   const out = [];
 
+  // 最近写入的会话优先处理（首次冷启动时活跃会话更早就绪）
+  sessions.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
   for (const s of sessions) {
     // 时间粗过滤：非活跃且超出窗口的直接跳过（运行中会话文件 mtime 必然新鲜，不会被误滤）
     if (activeWithinMs > 0 && now - s.mtimeMs > activeWithinMs) continue;
 
-    // 事件流解析（按 mtime+size 缓存）
+    // 元数据 + 降级信号（廉价：小 JSON，按 mtime 缓存）——先读，用于在解压前剪掉归档会话
+    const proj = readProjection(s.id);
+
+    // ★性能剪枝：archived（用户在 dsh 里归档 = 已处理/关闭 tab）的会话绝大多数是终态、最终会被隐藏。
+    // 用廉价的投影快速判断——只要投影不显示「疑似进行中(openTurn)」就直接跳过，省去昂贵的解压。
+    // （真正仍在进行的归档会话极罕见，且其投影会显示 openTurn，仍会走下面的解压确认。）
+    if (ws.archived.has(s.id) && !(proj && proj.openTurn)) continue;
+
+    // 事件流解析：常驻流式解压 + 只喂增量字节（避免每轮全量重解压多 MB 文件）
     let sig = null;
-    const cached = _sigCache.get(s.zstd);
-    if (cached && cached.mtime === s.mtimeMs && cached.size === s.size) {
-      sig = cached.sig;
-    } else {
-      try {
-        const buf = fs.readFileSync(s.zstd);
-        const text = decompressSession(buf);
-        sig = parseDshEvents(text);
-      } catch {
-        sig = null; // 解压/解析失败 → 走投影降级
+    let coldTail = false;
+    try {
+      let entry = _sigCache.get(s.zstd);
+      if (!entry || entry.broken || s.size < entry.fedSize) {
+        // 首次出现 / 流损坏 / 文件被截短(rotation) → 冷重建（只读尾部窗口）
+        entry = { mtimeMs: s.mtimeMs };
+        coldStart(entry, s.zstd, s.size);
+        _sigCache.set(s.zstd, entry);
+      } else if (s.size > entry.fedSize) {
+        feedDelta(entry, s.zstd, s.size); // 只喂新追加字节
+        entry.mtimeMs = s.mtimeMs;
       }
-      _sigCache.set(s.zstd, { mtime: s.mtimeMs, size: s.size, sig });
+      // size 未变 → 直接复用累积状态，零解压
+      if (!entry.broken) {
+        sig = finalizeSignals(entry.state);
+        coldTail = !!entry.coldTail;
+      }
+    } catch {
+      sig = null; // 任何异常 → 走投影降级
     }
     seen.add(s.zstd);
 
-    // 元数据 + 降级信号
-    const proj = readProjection(s.id);
     const wsEntry = ws.byId.get(s.id);
     const cwd = (proj && proj.cwd) || (wsEntry && wsEntry.path) || '';
     const title =
@@ -557,10 +712,10 @@ function scanDshSessions(opts = {}) {
       proj ? { openTurn: proj.openTurn, failure: proj.failure } : null,
       s.mtimeMs,
       now,
-      { stuckMs, toolStuckMs, stuckDetection, dshServerAlive: serverAlive }
+      { stuckMs, toolStuckMs, stuckDetection, dshServerAlive: serverAlive, coldTail }
     );
 
-    // archived（用户在 dsh 里归档，相当于关闭 tab）→ 除非仍在进行时（running/waiting），否则隐藏
+    // 二次确认：archived 会话即便走到这里（投影曾显示 openTurn），若解压后判定并非进行时也隐藏
     if (ws.archived.has(s.id) && !LIVE_STATES.has(derived.state)) continue;
 
     // 二级时间过滤：运行中始终显示，其余按最近活动时间筛掉老会话（与 Kiro/Claude 一致）
