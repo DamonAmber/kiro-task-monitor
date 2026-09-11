@@ -17,7 +17,7 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 
 外加一条 💳 **套餐用量**：浮窗底部一条进度条，随时看清 Kiro 套餐额度**剩余 / 已用百分比 / 是否超额 / 重置倒计时**，接近上限变黄、超额变红。
 
-同时还能**只读监控 Claude Code 会话**（运行中 / 完成 / 失败 / 中断），在同一浮窗里用来源色片（<code>Kiro</code> 蓝 / <code>Claude</code> 橙）区分。Claude 会话只做展示、不提供一键重试（终端无法可靠定位与注入）。
+同时还能**只读监控 Claude Code 与 DeepSeek Harness（`dsh web`）会话**（运行中 / 完成 / 失败 / 中断，dsh 另可识别「等你授权」），在同一浮窗里用来源色片（<code>Kiro</code> 蓝 / <code>Claude</code> 橙 / <code>DSH</code> 紫）区分。这两类会话只做展示、不提供一键重试（终端 / 浏览器无法可靠定位与注入）。
 
 还支持 📱 **局域网访问**：在设置里开启后，同一 Wi-Fi 下的手机 / 平板 / 另一台电脑用浏览器输入 PIN 即可全屏查看所有会话状态（横竖屏自适应），适合把一台闲置设备立成任务看板——只读、用 PIN 保护。
 
@@ -54,6 +54,8 @@ Mac 桌面上的一个小浮窗，实时监控**所有** Kiro 会话（跨工作
 据此默认只显示"当前 Kiro 窗口里真正打开着的会话"，并标记每个窗口**聚焦（激活）**的那个会话（浮窗里显示「当前」标签）。若这份窗口状态读不到，则安全回退到"按最近活动时间显示"的旧行为，绝不让监控变空白。详见 `src/openWindows.js`。
 
 **Claude Code 会话（只读）**：另读 Claude Code 的本地数据（全程只读）：`~/.claude/sessions/<pid>.json` 给出每个会话的 `status`（实测 `busy`=运行中 / `idle`=完成待你）、`sessionId`、`cwd`、名称；`pgrep -x claude` 判断进程存活（兼作中断判定与结束会话过滤）；`~/.claude/projects/*/<sessionId>.jsonl` 末行的 `isApiErrorMessage`/`error` 判失败。只做**经实测能判准**的状态：运行中 / 完成 / 失败 / 中断——**不做**一键重试、也不区分「等你授权」（终端 TUI 交互不落盘，判不准就不做）。详见 `src/claudeWatcher.js`。
+
+**DeepSeek Harness（`dsh web`）会话（只读）**：读 `~/.dsh`（可被 `DSH_HOME` 覆盖）。与 Kiro/Claude 不同，`dsh web` 是**单进程多会话**——一个 `node dsh web` 服务管理所有会话，故用会话**事件文件的新鲜度**当活跃探针，用 `pgrep -f "dsh web"` 判服务整体存活（据此兜底判「中断」）。数据源：`sessions/<编码cwd>/session-<id>/session.jsonl.zstd` 是权威事件流（zstd「多帧拼接」JSONL，用纯 JS 的 `fzstd` 解压，按 `mtime`/`size` 缓存），事件与 Kiro 几乎 1:1——`turn/start`·`turn/end`(`reason.kind`: `completed` 完成 / `error`·`failed` 出错 / `aborted`·`interrupted`·`cancelled` 取消)、`tool/call`·`tool/result`(按 `callId` 配对判在途工具)、`approval/asked`·`approval/decided`(未配对=**等你授权**)；`storages/session_projcache/sessions/<id>.json`（明文投影）作元数据(标题/cwd)与解压失败时的降级兜底；`storages/workspace.json` 提供工作区路径与归档集合（归档的非进行时会话不显示）。schema 为 dsh 内部私有格式、全部容错，读不到即降级或跳过、绝不抛错。详见 `src/dshWatcher.js`。
 
 **及时与性能**：用 `fs.watch` 监听会话目录写入，状态变化**亚秒级**反映（去抖后触发一次扫描），并保留定时轮询兜底。为降开销，未变化的会话按 `mtime`/`size` 跳过重复读取与 JSON 解析（`src/watcher.js` 的扫描缓存）；窗口状态（含 Kiro 进程存活检测）改为**异步、缓存、约 8s 刷新**，不再每轮同步 `spawn sqlite3`。
 
@@ -147,6 +149,7 @@ npm run watch:once   # 只扫描打印一次
 | 显示最近（小时） | 二级过滤：在已打开的会话中再按最近 N 小时活跃筛选 | 24 |
 | 底部显示**套餐用量** | 浮窗底部显示 Kiro 套餐额度剩余 / 已用百分比 / 超额 / 重置倒计时 | 开 |
 | 监控 **Claude Code** 会话 | 同时只读监控 Claude Code 会话（运行/完成/失败/中断），来源色片区分 | 开 |
+| 监控 **DeepSeek Harness** 会话 | 同时只读监控 `dsh web` 会话（运行/完成/出错/等你授权/中断），来源色片区分 | 开 |
 | **极简模式** | 单行紧凑卡片、隐藏次要信息（来源改用左边框色区分），窗口可缩到很小；普通/极简两种尺寸各自记忆 | 关 |
 | **局域网访问** | 开启后起一个只读 Web 服务，手机 / 平板浏览器输入 PIN 即可全屏查看（横竖屏自适应）；列出全部可用网址并标出 Wi-Fi（多网卡时选对那个），PIN 可随时「换一个」 | 关 |
 | 窗口置顶 | 浮窗始终置顶 | 开 |
@@ -176,6 +179,7 @@ src/
   permissions.js     系统授权/能力自检（辅助功能 / 会话数据可读 / sqlite3 / Kiro 窗口状态）→ 缺授权推提醒
   diagnostics.js     一键诊断报告：汇总环境/权限/窗口构成/逐会话隐藏原因 → 默认脱敏 JSON，供反馈定位
   claudeWatcher.js   只读监控 Claude Code 会话（~/.claude sessions + transcript + pgrep）
+  dshWatcher.js      只读监控 DeepSeek Harness（dsh web）会话（~/.dsh zstd 事件流 + 投影缓存 + pgrep）
   trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标（深浅色菜单栏自适应）
   retry.js           一键重试 / 聚焦窗口（kiro CLI 优先，AppleScript 兜底）
   webServer.js       局域网只读 Web 服务（HTTP + SSE，PIN 鉴权）→ 手机/平板浏览器全屏查看

@@ -26,6 +26,7 @@ const DEFAULT_CONFIG = {
   usagePollMs: 60000, // 套餐用量刷新间隔（变化慢，单独用更长间隔）
 
   watchClaude: true, // 同时监控 Claude Code 会话（只读；运行/完成/失败/中断）
+  watchDsh: true, // 同时监控 DeepSeek Harness（dsh web）会话（只读；运行/完成/失败/等待授权/中断）
 
   showActivity: true, // 卡片显示"当前动作"（运行中执行的工具 / 等待你时的问题）
   showTimeline: true, // 卡片显示迷你活动时间线（近 10 分钟事件密度 sparkline）

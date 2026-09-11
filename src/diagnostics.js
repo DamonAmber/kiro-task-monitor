@@ -166,6 +166,7 @@ function pickConfig(config = {}) {
     stuckSeconds: config.stuckSeconds ?? 240,
     toolStuckSeconds: config.toolStuckSeconds ?? 1800,
     watchClaude: config.watchClaude !== false,
+    watchDsh: config.watchDsh !== false,
     pollMs: config.pollMs ?? 2000,
   };
 }
@@ -197,6 +198,7 @@ function redactPermissions(perm, sensitive) {
  * @param {Array}   o.sessionsRaw       过滤前的 Kiro 会话全集（scanSessions onlyOpenSessions:false，已打标）
  * @param {Set}     o.shownKeys         当前实际显示的会话 key 集合
  * @param {number}  o.claudeShown       当前显示的 Claude 会话数
+ * @param {number}  o.dshShown          当前显示的 dsh 会话数
  * @returns {Promise<object>} 报告对象
  */
 async function buildReport(o = {}) {
@@ -301,7 +303,7 @@ async function buildReport(o = {}) {
     scanLine += `（${parts.join(' · ')}）`;
   }
   summary.push(scanLine);
-  summary.push(`当前显示的 Claude 会话: ${o.claudeShown || 0}`);
+  summary.push(`当前显示的 Claude 会话: ${o.claudeShown || 0} · dsh 会话: ${o.dshShown || 0}`);
   summary.push(
     `关键配置: 只显示已打开=${cfg.onlyOpenSessions} · 只看当前=${cfg.onlyFocusedSession} · 显示最近=${cfg.activeWithinHours}h · 卡死兜底=${cfg.stuckDetection}`
   );
@@ -343,6 +345,7 @@ async function buildReport(o = {}) {
       hidden: hiddenTotal,
       hiddenByReason,
       claudeShown: o.claudeShown || 0,
+      dshShown: o.dshShown || 0,
     },
     sessions,
   };

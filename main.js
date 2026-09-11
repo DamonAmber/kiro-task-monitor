@@ -21,6 +21,7 @@ const {
 const { autoUpdater } = require('electron-updater');
 const { scanSessions, compareSessions, STATE } = require('./src/watcher');
 const { scanClaudeSessions, getClaudePidsAsync } = require('./src/claudeWatcher');
+const { scanDshSessions, getDshServerAliveAsync } = require('./src/dshWatcher');
 const { readUsage } = require('./src/usage');
 const { readOpenWindowContextAsync } = require('./src/openWindows');
 const { checkPermissions } = require('./src/permissions');
@@ -51,6 +52,7 @@ const permNotified = { accessibility: false, diskAccess: false };
 // 避免每次轮询都同步 spawn sqlite3（性能）。null 时 scanSessions 降级为不过滤。
 let cachedWinCtx = null;
 let cachedClaudePids = null; // 当前存活的 Claude 会话进程 pid 集（异步刷新；null=未知，不判中断）
+let cachedDshServerAlive = undefined; // `dsh web` 服务是否存活（异步刷新；undefined=未知，不判中断）
 let trayAlert = false; // 托盘当前是否显示失败红点（用于变化时才重绘图标）
 // 动态托盘：有会话运行中时让 ◐ 旋转。帧按 (alert,dark) 预生成后循环，(alert,dark) 变化才重建。
 let trayAnimTimer = null;
@@ -335,8 +337,9 @@ function playSound(name = 'Basso') {
 
 function notify({ title, body, session, isFailure }) {
   if (!Notification.isSupported()) return;
-  // Claude 会话无法可靠聚焦终端/重试 → 通知不提供窗口动作，点击仅显示监控浮窗
-  const actionable = !!session && session.source !== 'claude';
+  // 仅 Kiro 会话能可靠聚焦窗口/重试；Claude（终端）与 dsh（浏览器）均只读，
+  // 通知不提供窗口动作，点击仅显示监控浮窗。
+  const actionable = !!session && session.source === 'kiro';
   const n = new Notification({
     title,
     body,
@@ -389,7 +392,7 @@ function handleTransitions(sessions, now) {
       // ① 确定性中断（Kiro 已不在运行）：不弹通知、不自动重试——用户此时不在 Kiro，
       //    也无从重试；只在浮窗/托盘红点里标记，等用户回来自行处理，避免退出 Kiro 时刷屏。
       if (!s.interrupted) {
-        const canRetry = s.source !== 'claude'; // Claude 会话无法可靠重试
+        const canRetry = s.source === 'kiro'; // 仅 Kiro 可重试；Claude/dsh 只读
         if (config.get('notifyFailed')) {
           notify({
             title: s.state === STATE.FAILED ? `❌ 任务出错 · ${wsName}` : `⏳ 任务疑似卡住 · ${wsName}`,
@@ -514,7 +517,24 @@ function poll() {
     }
   }
 
-  const sessions = [...kiro, ...claude].sort(compareSessions);
+  // DeepSeek Harness（dsh web）会话（只读；可在设置里关闭）。单进程多会话，dshServerAlive 供中断判定。
+  let dsh = [];
+  if (config.get('watchDsh') !== false) {
+    try {
+      dsh = scanDshSessions({
+        now,
+        activeWithinMs,
+        stuckMs: (config.get('stuckSeconds') || 240) * 1000,
+        toolStuckMs: (config.get('toolStuckSeconds') || 1800) * 1000,
+        stuckDetection: config.get('stuckDetection') !== false,
+        dshServerAlive: cachedDshServerAlive,
+      });
+    } catch (e) {
+      console.error('[dsh] scan failed:', e && e.message);
+    }
+  }
+
+  const sessions = [...kiro, ...claude, ...dsh].sort(compareSessions);
   lastSessions = sessions;
   handleTransitions(sessions, now);
   updateTrayTitle(sessions);
@@ -558,6 +578,14 @@ async function refreshWinCtx() {
       cachedClaudePids = await getClaudePidsAsync();
     } catch {
       /* 保留上次值 */
+    }
+  }
+  // 异步刷新 `dsh web` 服务存活（单进程多会话，供 dsh 会话的中断判定）
+  if (config.get('watchDsh') !== false) {
+    try {
+      cachedDshServerAlive = await getDshServerAliveAsync();
+    } catch {
+      cachedDshServerAlive = undefined; // 未知 → 不判中断（安全）
     }
   }
 }
@@ -696,6 +724,7 @@ async function generateDiagnostics({ includeSensitive } = {}) {
   });
   const shownKeys = new Set(lastSessions.map((s) => s.key));
   const claudeShown = lastSessions.filter((s) => s.source === 'claude').length;
+  const dshShown = lastSessions.filter((s) => s.source === 'dsh').length;
 
   let report;
   try {
@@ -708,6 +737,7 @@ async function generateDiagnostics({ includeSensitive } = {}) {
       sessionsRaw: raw,
       shownKeys,
       claudeShown,
+      dshShown,
     });
   } catch (e) {
     return { ok: false, error: (e && e.message) || String(e) };

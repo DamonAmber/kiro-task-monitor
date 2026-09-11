@@ -34,6 +34,16 @@ const STATE_LABEL = {
 // 需要本地续算耗时的状态（正在计时）
 const LIVE_STATES = new Set(['running', 'waiting', 'stuck']);
 
+// 来源色片：Kiro（蓝）/ Claude（橙）/ DSH（紫）
+const SRC_META = {
+  kiro: { label: 'Kiro', cls: 'src-kiro' },
+  claude: { label: 'Claude', cls: 'src-claude' },
+  dsh: { label: 'DSH', cls: 'src-dsh' },
+};
+function srcOf(s) {
+  return s && (s.source === 'claude' || s.source === 'dsh') ? s.source : 'kiro';
+}
+
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])
@@ -120,7 +130,8 @@ function render() {
   const html = sessions
     .map((s) => {
       const label = s.interrupted ? '已中断' : STATE_LABEL[s.state] || s.state;
-      const isClaude = s.source === 'claude';
+      const src = srcOf(s);
+      const meta = SRC_META[src];
       const live = LIVE_STATES.has(s.state);
       // running/waiting/stuck：本轮已运行时长（本地续算）；done：本轮耗时（静态）
       const baseMs = live ? s.elapsedMs || 0 : s.state === 'done' ? s.turnDurationMs || 0 : 0;
@@ -129,12 +140,10 @@ function render() {
         : '';
       const timeTxt = fmtDur(live ? baseMs + (Date.now() - receivedAt) : baseMs);
       const reason = s.state === 'failed' && s.stopReason ? ` · ${esc(s.stopReason)}` : '';
-      const srcChip = `<span class="src ${isClaude ? 'src-claude' : 'src-kiro'}">${
-        isClaude ? 'Claude' : 'Kiro'
-      }</span>`;
+      const srcChip = `<span class="src ${meta.cls}">${meta.label}</span>`;
       const focusTag = s.isFocused ? '<span class="focus-tag">当前</span>' : '';
       return `
-      <div class="card${s.isFocused ? ' focused' : ''}" data-source="${isClaude ? 'claude' : 'kiro'}">
+      <div class="card${s.isFocused ? ' focused' : ''}" data-source="${src}">
         <div class="dot ${s.state}"></div>
         <div class="card-main">
           <div class="card-title">${focusTag}${esc(s.title)}</div>

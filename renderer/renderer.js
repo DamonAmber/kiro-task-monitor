@@ -53,6 +53,16 @@ const STATE_LABEL = {
   idle: '空闲',
 };
 
+// 来源元数据：色片文案/样式 + 是否可控（仅 Kiro 可重试/聚焦；Claude 终端、dsh 浏览器均只读）
+const SRC_META = {
+  kiro: { label: 'Kiro', cls: 'src-kiro', tip: '' },
+  claude: { label: 'Claude', cls: 'src-claude', tip: 'Claude Code 会话（只读）' },
+  dsh: { label: 'DSH', cls: 'src-dsh', tip: 'DeepSeek Harness 会话（只读）' },
+};
+function srcOf(s) {
+  return s && (s.source === 'claude' || s.source === 'dsh') ? s.source : 'kiro';
+}
+
 function fmtDur(ms) {
   if (!ms || ms < 0) return '';
   const s = Math.round(ms / 1000);
@@ -107,19 +117,22 @@ function render(sessions) {
           : '';
       const reason =
         s.state === 'failed' && s.stopReason ? ` · ${esc(s.stopReason)}` : '';
-      const isClaude = s.source === 'claude';
-      // 来源色片：Kiro（蓝）/ Claude（橙）——一眼区分，简洁
-      const srcChip = `<span class="src ${isClaude ? 'src-claude' : 'src-kiro'}">${isClaude ? 'Claude' : 'Kiro'}</span>`;
-      // Claude 会话无法可靠重试/聚焦终端 → 只读：不给重试按钮、卡片不可点聚焦
+      const src = srcOf(s);
+      const isKiro = src === 'kiro';
+      const readOnly = !isKiro; // Claude / dsh 均只读
+      const meta = SRC_META[src];
+      // 来源色片：Kiro（蓝）/ Claude（橙）/ DSH（紫）——一眼区分，简洁
+      const srcChip = `<span class="src ${meta.cls}">${meta.label}</span>`;
+      // 只读来源无法可靠重试/聚焦 → 不给重试按钮、卡片不可点聚焦
       const btn =
-        isFail && !isClaude
+        isFail && isKiro
           ? `<button class="retry-btn ${s.state === 'stuck' ? 'stuck' : ''}" data-retry="${esc(s.key)}">重试</button>`
           : '';
       const focusTag = s.isFocused ? '<span class="focus-tag" title="该窗口当前聚焦的会话">当前</span>' : '';
-      const focusAttr = isClaude ? '' : ` data-focus="${esc(s.key)}"`;
-      const cardTitle = isClaude ? ' title="Claude Code 会话（只读）"' : '';
+      const focusAttr = isKiro ? ` data-focus="${esc(s.key)}"` : '';
+      const cardTitle = meta.tip ? ` title="${meta.tip}"` : '';
       return `
-      <div class="card${s.isFocused ? ' focused' : ''}${isClaude ? ' readonly' : ''}" data-source="${isClaude ? 'claude' : 'kiro'}"${focusAttr}${cardTitle}>
+      <div class="card${s.isFocused ? ' focused' : ''}${readOnly ? ' readonly' : ''}" data-source="${src}"${focusAttr}${cardTitle}>
         <div class="dot ${s.state}"></div>
         <div class="card-main">
           <div class="card-title" title="${esc(s.title)}">${focusTag}${esc(s.title)}</div>

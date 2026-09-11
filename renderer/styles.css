@@ -331,7 +331,11 @@ body {
   color: #e79a72;
   background: rgba(217, 119, 87, 0.18);
 }
-/* Claude 会话只读：不显示可点聚焦的手型 */
+.src-dsh {
+  color: #b79aec;
+  background: rgba(139, 92, 246, 0.18);
+}
+/* 只读来源（Claude / dsh）：不显示可点聚焦的手型 */
 .card.readonly {
   cursor: default;
 }
@@ -404,6 +408,9 @@ body {
 }
 #app.compact .card[data-source='claude'] {
   border-left-color: rgba(217, 119, 87, 0.7);
+}
+#app.compact .card[data-source='dsh'] {
+  border-left-color: rgba(139, 92, 246, 0.7);
 }
 #app.compact .dot {
   margin-top: 0;

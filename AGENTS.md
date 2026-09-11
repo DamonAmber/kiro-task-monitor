@@ -27,6 +27,15 @@ src/
   claudeWatcher.js   只读监控 Claude Code 会话，产出与 watcher 同形状的会话(source:'claude')。
                      只做实测能判准的状态：busy→运行中 / idle→完成 / API错误→失败 / 进程消失→中断。
                      刻意不做重试、不区分「等你授权」（终端 TUI 不落盘）。见下「Claude Code」条。
+  dshWatcher.js      只读监控 DeepSeek Harness(`dsh web`)会话，产出与 watcher 同形状的会话(source:'dsh')。
+                     ★与 Kiro/Claude 不同：dsh web 是单进程多会话(一个 node dsh web 管全部)，故用会话事件文件
+                     mtime 当活跃探针、pgrep -f "dsh web" 判服务存活兜底「中断」。主源=事件流
+                     ~/.dsh/sessions/<编码cwd>/session-<id>/session.jsonl.zstd(多帧拼接 zstd JSONL，fzstd 解压、
+                     按 mtime+size 缓存)：turn/start·turn/end(reason.kind completed/error·failed/aborted·interrupted·
+                     cancelled)、tool/call·tool/result(callId 在 result 的 data.message.source.callId！)、
+                     approval/asked·approval/decided(未配对=等你授权)。降级/元数据=per-session 投影
+                     ~/.dsh/storages/session_projcache/sessions/<id>.json(明文，但会滞后于事件流，故只兜底+取标题/cwd)；
+                     workspace.json 给 path/title/archived(归档非 live 隐藏)。只读、不重试/聚焦、schema 全容错、解压失败降级投影。
   trayIcon.js        运行时无依赖生成菜单栏 ◐ 模板图标(setTemplateImage)；因 build/ 不打包，
                      故在代码里画 PNG。菜单栏标题只显示运行中会话数，详情放 tooltip
   retry.js           一键重试/聚焦窗口：kiro CLI(`kiro <路径>`) 优先，osascript 兜底

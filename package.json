@@ -22,7 +22,8 @@
     "release": "electron-builder --publish always"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "fzstd": "^0.1.1"
   },
   "devDependencies": {
     "electron": "^33.2.0",
