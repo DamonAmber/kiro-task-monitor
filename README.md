@@ -114,6 +114,7 @@ npm version patch && bash scripts/release.sh
 ```bash
 npm run watch        # 终端里每 2s 刷新一次所有会话状态
 npm run watch:once   # 只扫描打印一次
+npm run perf         # 性能基准 / 回归 gate（改扫描/解析/轮询等热路径必跑，超阈值非零退出）
 ```
 
 ---
@@ -196,6 +197,8 @@ scripts/
 tools/
   make-icon.js       无依赖生成图标
   watch-cli.js       无界面的终端版监控（验证用）
+  perf-bench.js      性能基准 / 回归 gate（npm run perf）：热路径扫描耗时，超阈值非零退出
+test/fixtures/       性能基准用的小种子 zstd（拼接放大成大会话，自包含可复现）
 .github/workflows/
   release.yml        打 tag 触发的自动发版流水线（正规发版路径）
 AGENTS.md            维护者 / 接手 AI 的交接说明（架构 · 铁律）

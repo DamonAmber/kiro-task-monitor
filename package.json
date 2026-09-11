@@ -16,6 +16,7 @@
     "start": "electron .",
     "watch": "node tools/watch-cli.js",
     "watch:once": "node tools/watch-cli.js --once",
+    "perf": "node tools/perf-bench.js",
     "icon": "node tools/make-icon.js",
     "pack": "electron-builder --dir",
     "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",

@@ -48,6 +48,9 @@ src/
 renderer/            浮窗 UI（index.html / styles.css / renderer.js）
 tools/
   watch-cli.js       无界面终端版监控（不启动 Electron，最快的调试/验证入口）
+  perf-bench.js      性能基准/回归 gate（npm run perf）：真实数据各 watcher 稳态 ms/轮 + dsh 合成 4MB
+                     大会话冷启动/活跃增量最坏情况；超阈值(稳态/增量<50ms、冷启动<3s)非零退出。改热路径必跑。
+                     用 test/fixtures/dsh-seed.jsonl.zstd(小种子帧)拼接放大，自包含可复现、不依赖本机数据。
   make-icon.js       无依赖生成 build/icon.png
 electron-builder.yml 打包/签名/公证/发布配置
 .github/workflows/release.yml   打 tag 触发的自动发版流水线
@@ -130,6 +133,14 @@ electron-builder.yml 打包/签名/公证/发布配置
 6. **功能有增改，必须同步更新落地页**：任何新增/改动的用户可见功能，都要在同一次改动里更新 `docs/index.html`
    的相关文案（功能卡片、状态图例、「怎么使用」等）；若界面有变化，还要重做首屏截图 `docs/screenshot.png`。
    **不得在发布含新功能的版本时漏改落地页。**（详见下节「落地页同步规则」）
+7. **性能是第一约束——热路径绝不做同步重活**：这是小而美的浮窗，`poll()` 每 ~2s 在**主进程主线程同步**跑
+   所有 watcher 扫描；任何在 `main.js`(poll) / `watcher.js` / `claudeWatcher.js` / `dshWatcher.js` /
+   `openWindows.js` / `usage.js` 等**热路径**上的同步重活（整文件读+解压、全量重解析、`spawn` 子进程、
+   同步 sqlite3 等）都会**阻塞主线程 → 整个 UI 卡死**（拖不动、点击无响应；v0.11.0 曾因每轮全量解压多 MB 的
+   dsh zstd 阻塞数秒）。铁律：**① 未变化的会话必须按 `mtime`/`size` 命中缓存跳过重解析；② 大文件只读尾部/增量，
+   不整文件解压；③ 进程存活(pgrep)、窗口状态(sqlite3) 一律异步预刷 + 缓存，poll 里只读缓存值、绝不同步 spawn；
+   ④ 改动上述任一热路径，改前改后都必须跑 `npm run perf`**（稳态/增量单轮 <50ms、合成 4MB 冷启动 <3s，
+   超标即非零退出、禁止发版）。新增数据源(watcher) 同样要保证「未变化零成本、活跃增量、绝不整文件重解析」。
 
 ## 落地页同步规则（docs/ 站点）
 
@@ -150,6 +161,7 @@ electron-builder.yml 打包/签名/公证/发布配置
 ```bash
 npm start            # 启动浮窗（开发模式，不检查更新）
 npm run watch        # 终端版监控，验证状态判定最快（无需 Electron）
+npm run perf         # 性能基准/回归 gate（改热路径必跑；超标非零退出）
 npm run icon         # 重新生成 app 图标
 npm run dist         # 本地打未签名包（验证打包链路，不上传）
 # 发版见 RELEASE.md： npm version patch && git push origin main --follow-tags
@@ -158,5 +170,8 @@ npm run dist         # 本地打未签名包（验证打包链路，不上传）
 ## 验证改动
 - 改 `watcher.js` 后：`npm run watch:once` 对照真实会话看判定是否合理；必要时和 `~/.kiro` 里对应会话的
   `session.json.status` / `messages.jsonl` 末尾事件核对。
+- **改任一热路径**（`main.js` 的 poll、`watcher.js` / `claudeWatcher.js` / `dshWatcher.js` /
+  `openWindows.js` / `usage.js` 的扫描/解析/进程/DB 读取）：**改前跑一次 `npm run perf` 记基线，改后再跑确认没退化**；
+  必须通过（稳态/增量单轮 <50ms、合成 4MB 冷启动 <3s）。新增数据源同理。
 - 改 UI 后：`npm start` 起浮窗肉眼验证。
 - 改重试逻辑：注意会真的向某个 Kiro 会话发送「继续」，测试时选一个安全的会话。
