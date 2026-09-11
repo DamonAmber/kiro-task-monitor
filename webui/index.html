@@ -19,6 +19,11 @@
     <link rel="apple-touch-icon" href="icon.png" />
   </head>
   <body>
+    <!-- 环境动效层（纯 CSS/GPU，只读装饰，reduced-motion 下自动隐藏、标签页隐藏时暂停） -->
+    <div class="fx" aria-hidden="true">
+      <div class="fx-aurora"></div>
+      <div class="fx-particles" id="fx-particles"></div>
+    </div>
     <div id="app">
       <header class="topbar">
         <div class="topbar-left">

@@ -143,7 +143,7 @@ function render() {
       const srcChip = `<span class="src ${meta.cls}">${meta.label}</span>`;
       const focusTag = s.isFocused ? '<span class="focus-tag">当前</span>' : '';
       return `
-      <div class="card${s.isFocused ? ' focused' : ''}" data-source="${src}">
+      <div class="card ${s.state}${s.isFocused ? ' focused' : ''}" data-source="${src}">
         <div class="dot ${s.state}"></div>
         <div class="card-main">
           <div class="card-title">${focusTag}${esc(s.title)}</div>
@@ -536,3 +536,30 @@ fetch('/api/state')
     connect();
   })
   .catch(() => connect());
+
+/* ---------- 环境动效：生成上浮粒子 + 标签页隐藏时暂停（省电省 CPU） ---------- */
+(function initFx() {
+  const reduce =
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const host = document.getElementById('fx-particles');
+  if (host && !reduce) {
+    const N = 14;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    let html = '';
+    for (let i = 0; i < N; i++) {
+      // 每个粒子随机位置/大小/时长/漂移；负延迟让它们一开始就分散在屏幕各处，而非同时从底部升起
+      const style =
+        `--x:${rnd(2, 98).toFixed(1)}vw;` +
+        `--s:${rnd(3, 7).toFixed(1)}px;` +
+        `--d:${rnd(14, 26).toFixed(1)}s;` +
+        `--delay:${(-rnd(0, 26)).toFixed(1)}s;` +
+        `--sway:${rnd(-40, 40).toFixed(0)}px;`;
+      html += `<i style="${style}"></i>`;
+    }
+    host.innerHTML = html;
+  }
+  // 标签页不可见（切后台/锁屏）时暂停装饰动画，前台恢复
+  document.addEventListener('visibilitychange', () => {
+    document.body.classList.toggle('fx-paused', document.hidden);
+  });
+})();

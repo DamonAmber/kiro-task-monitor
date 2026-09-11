@@ -1,5 +1,5 @@
 :root {
-  --bg: #131316;
+  --bg: #0e0e13;
   --panel: rgba(255, 255, 255, 0.05);
   --panel-hover: rgba(255, 255, 255, 0.08);
   --text: #f2f2f5;
@@ -31,6 +31,9 @@ body {
 }
 
 #app {
+  position: relative;
+  z-index: 1; /* 浮于环境动效层之上；自身透明，让极光/粒子透出 */
+  background: transparent;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
@@ -38,6 +41,59 @@ body {
   /* 适配 iPhone 刘海 / 灵动岛 / 底部安全区 */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
+}
+
+/* ---------- 环境动效层：极光柔光 + 上浮粒子（纯 CSS，GPU 合成，克制不打扰） ---------- */
+.fx {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.fx-aurora {
+  position: absolute;
+  inset: -25%;
+  background:
+    radial-gradient(38% 38% at 20% 22%, rgba(59, 130, 246, 0.20), transparent 70%),
+    radial-gradient(34% 34% at 82% 18%, rgba(168, 85, 247, 0.17), transparent 70%),
+    radial-gradient(42% 42% at 62% 88%, rgba(34, 197, 94, 0.10), transparent 72%);
+  filter: blur(46px);
+  animation: aurora 42s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes aurora {
+  0% { transform: translate3d(-3%, -2%, 0) scale(1.05); }
+  50% { transform: translate3d(3%, 2%, 0) scale(1.16); }
+  100% { transform: translate3d(-2%, 3%, 0) scale(1.09); }
+}
+.fx-particles i {
+  position: absolute;
+  bottom: -12px;
+  left: var(--x);
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(170, 200, 255, 0.55), rgba(170, 200, 255, 0) 70%);
+  opacity: 0;
+  animation: rise var(--d) linear var(--delay) infinite;
+  will-change: transform, opacity;
+}
+@keyframes rise {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  12% { opacity: 0.55; }
+  88% { opacity: 0.45; }
+  100% { transform: translate3d(var(--sway), -112vh, 0); opacity: 0; }
+}
+/* 尊重「减少动态效果」偏好：直接隐藏装饰层，回到干净静态 UI */
+@media (prefers-reduced-motion: reduce) {
+  .fx { display: none; }
+  .dot.running, .dot.stuck { animation: none; }
+  .card.running, .card.stuck { animation: none; }
+}
+/* 标签页不可见时暂停所有装饰动画，省电省 CPU */
+body.fx-paused .fx * {
+  animation-play-state: paused;
 }
 
 /* ---------- 顶栏 ---------- */
@@ -184,6 +240,8 @@ body {
   padding: 64px 16px;
 }
 
+/* 卡片：对齐桌面客户端的干净风格——统一细边框 + 半透明面板底，
+   来源不再用丑陋的彩色左边条表达（已由下方 .src 色片区分）。 */
 .card {
   display: flex;
   align-items: flex-start;
@@ -192,20 +250,28 @@ body {
   border-radius: 14px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-left: 3px solid transparent;
-}
-.card[data-source="kiro"] {
-  border-left-color: rgba(59, 130, 246, 0.7);
-}
-.card[data-source="claude"] {
-  border-left-color: rgba(217, 119, 87, 0.8);
-}
-.card[data-source="dsh"] {
-  border-left-color: rgba(139, 92, 246, 0.8);
+  transition: background 0.18s ease, box-shadow 0.35s ease, border-color 0.35s ease;
 }
 .card.focused {
   background: rgba(59, 130, 246, 0.12);
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+/* 运行中 / 卡住：卡片轻柔呼吸光晕，暗示「在动」（持续循环，随列表重建不闪） */
+.card.running {
+  border-color: rgba(59, 130, 246, 0.28);
+  animation: cardGlowRun 2.8s ease-in-out infinite;
+}
+.card.stuck {
+  border-color: rgba(168, 85, 247, 0.3);
+  animation: cardGlowStuck 2.8s ease-in-out infinite;
+}
+@keyframes cardGlowRun {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  50% { box-shadow: 0 6px 26px -12px rgba(59, 130, 246, 0.55); }
+}
+@keyframes cardGlowStuck {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+  50% { box-shadow: 0 6px 26px -12px rgba(168, 85, 247, 0.5); }
 }
 
 .dot {
@@ -217,19 +283,23 @@ body {
 }
 .dot.running {
   background: var(--running);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.65);
   animation: pulse 1.3s infinite;
 }
 .dot.waiting {
   background: var(--waiting);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
 }
 .dot.done {
   background: var(--done);
 }
 .dot.failed {
   background: var(--failed);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 }
 .dot.stuck {
   background: var(--stuck);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
   animation: pulse 1.3s infinite;
 }
 .dot.cancelled,
