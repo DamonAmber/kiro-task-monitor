@@ -560,11 +560,19 @@ function renderLan(state) {
     urlsEl.innerHTML = `<div class="lan-url-row lan-fail">启动失败：${esc(state.error)}</div>`;
   } else if (state.running) {
     const addrs = state.addresses || [];
-    if (!addrs.length) {
-      urlsEl.innerHTML = `<div class="lan-url-row lan-fail">未检测到局域网地址（是否连了网络？）</div>`;
-    } else {
-      // 全部地址逐行列出，Wi-Fi 已排在最前并标注，方便直接选对
-      urlsEl.innerHTML = addrs
+    let html = '';
+    // 稳定的固定域名（mDNS .local）排最前，标为「固定」并注明推荐保存——IP 变了也不失效
+    if (state.hostUrl) {
+      html +=
+        `<div class="lan-url-row lan-fixed">` +
+        `<span class="lan-net fixed">固定</span>` +
+        `<b class="lan-url">${esc(state.hostUrl)}</b>` +
+        `<span class="lan-recommend">建议存这个</span>` +
+        `</div>`;
+    }
+    if (addrs.length) {
+      // 各网卡 IP 逐行列出作备用，Wi-Fi 已排在最前并标注
+      html += addrs
         .map((a) => {
           const tag = a.isWifi
             ? '<span class="lan-net wifi">Wi-Fi</span>'
@@ -573,6 +581,10 @@ function renderLan(state) {
         })
         .join('');
     }
+    if (!html) {
+      html = `<div class="lan-url-row lan-fail">未检测到局域网地址（是否连了网络？）</div>`;
+    }
+    urlsEl.innerHTML = html;
   } else {
     urlsEl.innerHTML = `<div class="lan-url-row">正在启动…</div>`;
   }

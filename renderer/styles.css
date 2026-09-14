@@ -641,6 +641,17 @@ body {
   color: #7fb0ff;
   background: rgba(59, 130, 246, 0.16);
 }
+/* 固定域名（mDNS）行：绿色「固定」标 + 推荐小字，视觉上突出为首选 */
+.lan-net.fixed {
+  color: #6ee7a8;
+  background: rgba(16, 185, 129, 0.16);
+}
+.lan-recommend {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #6ee7a8;
+  opacity: 0.85;
+}
 .lan-url {
   color: var(--text);
   font-weight: 600;

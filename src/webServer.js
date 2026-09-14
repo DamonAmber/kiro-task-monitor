@@ -68,6 +68,40 @@ function wifiIface() {
 }
 
 /**
+ * 本机的 mDNS/Bonjour 主机名（macOS 的 <LocalHostName>.local）。
+ * 局域网 IP 由路由器 DHCP 动态分配、续租时会变，导致手机主屏保存的书签失效；
+ * 而这个域名在同一局域网内始终解析到本机（随当前 IP 自动更新），适合保存到手机主屏。
+ * iOS Safari 原生支持 .local 解析，较新的 Android Chrome 亦支持。
+ * 探测一次并缓存：undefined=未探测 / null=取不到（降级为只展示 IP）。
+ */
+let _mdnsHost;
+function mdnsHost() {
+  if (_mdnsHost !== undefined) return _mdnsHost;
+  _mdnsHost = null;
+  if (process.platform === 'darwin') {
+    try {
+      const out = require('child_process')
+        .execFileSync('scutil', ['--get', 'LocalHostName'], { encoding: 'utf8', timeout: 3000 })
+        .trim();
+      // Bonjour 已把名字规整为 DNS 安全字符（字母数字 + 连字符），直接拼 .local 即可
+      if (out) _mdnsHost = `${out}.local`;
+    } catch {
+      /* 取不到就降级不展示，不影响 IP 访问 */
+    }
+  }
+  // 兜底：os.hostname() 本身就是 *.local 时也可用
+  if (!_mdnsHost) {
+    try {
+      const h = os.hostname();
+      if (h && /\.local$/i.test(h)) _mdnsHost = h;
+    } catch {
+      /* ignore */
+    }
+  }
+  return _mdnsHost;
+}
+
+/**
  * 返回本机所有可用于局域网访问的 IPv4 地址，附带所在网卡名与是否为 Wi-Fi。
  * 手机通常走 Wi-Fi，故 Wi-Fi 地址排最前；其余按常见私有网段顺序。
  * 无法确定"手机与哪块网卡同网段"，因此调用方应把全部地址都展示给用户自行选择。
@@ -345,7 +379,8 @@ function broadcast(payload) {
 
 function getInfo() {
   // addresses: [{ address, iface, isWifi }]，Wi-Fi 优先。端口由 port 单独给出。
-  return { port: boundPort || 0, addresses: lanIPs() };
+  // hostname: 稳定的 mDNS 域名（如 xxx.local），IP 变了也不失效；取不到为 null。
+  return { port: boundPort || 0, addresses: lanIPs(), hostname: mdnsHost() };
 }
 
-module.exports = { start, stop, broadcast, getInfo, lanIPs };
+module.exports = { start, stop, broadcast, getInfo, lanIPs, mdnsHost };

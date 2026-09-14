@@ -784,11 +784,16 @@ function getWebState() {
     iface: a.iface,
     isWifi: !!a.isWifi,
   }));
+  // 稳定的 mDNS 固定域名（IP 变化也不失效），推荐用户保存到手机主屏
+  const host = webInfo.hostname || '';
+  const hostUrl = host ? `http://${host}:${port}` : '';
   return {
     enabled: !!config.get('webEnabled'),
     running: !!webInfo.running,
     port,
     addresses,
+    hostname: host,
+    hostUrl,
     pin: config.get('webPin') || '',
     error: webInfo.error || '',
   };
