@@ -493,6 +493,14 @@ const LIVE_STATES = new Set([STATE.RUNNING, STATE.WAITING]);
 // 窗口状态识别不到该会话所属工作区时的护栏放宽到 30min，覆盖「正在跑长工具、长时间无写入」
 // 的运行会话（否则会被误当残留隐藏），同时仍能滤掉早已结束的老残留。
 const UNMATCHED_GRACE_MS = 30 * 60 * 1000;
+// 「已完成」会话在打开的窗口里的显示宽限。Kiro 的会话面板列表（state.vscdb 的
+// sessionPanels.entries）是 VS Code 内核**周期性落盘、会滞后**的——你正在用的那个窗口尤其明显：
+// 多会话窗口里，某个后台 tab 刚跑完时，它常常还没落进/仍不在面板列表里。若此时按 panels.ids 严格
+// 过滤，就会出现「任务刚完成、窗口没关，会话却从监控里凭空消失」（多会话 + 切 tab 场景高发）。
+// 因此：窗口开着、且会话最近仍有活动（idleMs 在此宽限内）时，即使不在 panels.ids 也显示为「已完成」。
+// 只对「已完成」这种**非告警**终态放宽；出错 / 卡住是不会自我更新的历史事件，仍严格按 panels.ids
+// 过滤（用户关掉的报错 tab 不该复活霸占列表顶部）。
+const RECENT_DONE_GRACE_MS = 30 * 60 * 1000;
 
 /**
  * 判定单个会话在「只显示已打开会话」模式下是否应显示，并给出原因（供诊断报告解释「为什么没看到」）。
@@ -516,19 +524,28 @@ function visibilityDecision(s, ctx, { onlyOpen = true, onlyFocused = false } = {
     // 面板读不到 → 无法判断该会话 tab 是否还开着，保守保留（避免误杀）。
     if (!panelsReadable) return { shown: true, reason: 'window-open-panels-unknown' };
 
-    if (onlyFocused) {
-      return s.id && s.id === panels.focused
-        ? { shown: true, reason: 'focused' }
-        : { shown: false, reason: 'not-focused' }; // 开了「只看当前会话」，此会话非聚焦标签
+    // 你当前聚焦（正在看）的那个会话——无论什么状态都显示：这就是你眼前这个 tab，
+    // 即使刚完成、面板列表尚未落盘，也不该消失。
+    if (s.id && s.id === panels.focused) return { shown: true, reason: 'focused' };
+
+    // 开了「只看当前会话」：非聚焦一律不显示。
+    if (onlyFocused) return { shown: false, reason: 'not-focused' };
+
+    // tab 仍在该窗口的会话面板列表里 → 显示（面板可信时的常规判据）。
+    if (s.id && panels.ids.has(s.id)) return { shown: true, reason: 'in-panels' };
+
+    // 不在 panels.ids 里：可能是 tab 已关，也可能是面板列表滞后（state.vscdb 周期性落盘，
+    // 正在用的窗口里刚完成的会话常还没落进列表）。对「已完成」这种**非告警**终态，若最近仍有活动，
+    // 宽容显示为「已完成」，避免刚跑完就凭空消失（多会话 + 切 tab 场景高发）。
+    if (s.state === STATE.DONE && (s.idleMs ?? Infinity) <= RECENT_DONE_GRACE_MS) {
+      return { shown: true, reason: 'recent-done' };
     }
 
-    // 其余会话——含「过去时」的出错 / 卡住 / 已中断，以及已完成 / 空闲——仅当其 tab 仍在该窗口
-    // 的会话面板列表里时才显示。出错 / 卡住是已发生、不会自我更新的历史事件：用户一旦关闭它的 tab
-    //（不在面板列表里），说明已不再关注，就不该继续霸占列表顶部报错——否则同工作区开了新会话后，
-    // 早先关掉的出错会话会一直挂着（这正是「已经在做别的了，出错却卡着不消失」的误报根源）。
-    return s.id && panels.ids.has(s.id)
-      ? { shown: true, reason: 'in-panels' }
-      : { shown: false, reason: 'not-in-panels' }; // 窗口开着但不在该窗口的会话面板列表里
+    // 其余会话——「过去时」的出错 / 卡住 / 已中断、已取消，以及静默过久的已完成 / 空闲——仅当其 tab
+    // 仍在该窗口的会话面板列表里时才显示。出错 / 卡住是已发生、不会自我更新的历史事件：用户一旦关闭
+    // 它的 tab（不在面板列表里），说明已不再关注，就不该继续霸占列表顶部报错——否则同工作区开了新
+    // 会话后，早先关掉的出错会话会一直挂着（这正是「已经在做别的了，出错却卡着不消失」的误报根源）。
+    return { shown: false, reason: 'not-in-panels' }; // 窗口开着但不在该窗口的会话面板列表里
   }
 
   // 工作区没匹配到打开的窗口：历史残留，或窗口状态滞后 / 多根工作区 / 路径不匹配。
